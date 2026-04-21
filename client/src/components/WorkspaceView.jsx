@@ -22,6 +22,9 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             const now = new Date();
             const expired = data.filter(c => {
                 if (c.archived || !c.dueDate || c.expiredAlertAcknowledged) return false;
+                // Exclude cards in 'done' column or any column title like 'Done'
+                const parentCol = columns.find(col => col.id === c.columnId);
+                if (c.columnId === 'done' || (parentCol && parentCol.title && parentCol.title.toLowerCase().includes('done'))) return false;
                 const due = new Date(c.dueDate);
                 const diffDays = (now - due) / (1000 * 60 * 60 * 24);
                 return diffDays >= 3;
