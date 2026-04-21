@@ -58,7 +58,7 @@ router.put('/workspaces/:wsId/tasks/bulk-archive', async (req, res) => {
   try {
     const { cardIds } = req.body;
     if (!cardIds || !Array.isArray(cardIds)) return res.status(400).json({ error: 'cardIds array required' });
-    await Task.updateMany({ _id: { $in: cardIds }, workspaceId: req.params.wsId }, { $set: { archived: true } });
+    await Task.updateMany({ _id: { $in: cardIds }, workspaceId: req.params.wsId }, { $set: { archived: true, expiredAlertAcknowledged: true } });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -67,7 +67,7 @@ router.put('/workspaces/:wsId/tasks/bulk-move', async (req, res) => {
   try {
     const { cardIds, targetColumn } = req.body;
     if (!cardIds || !Array.isArray(cardIds) || !targetColumn) return res.status(400).json({ error: 'cardIds array and targetColumn required' });
-    await Task.updateMany({ _id: { $in: cardIds }, workspaceId: req.params.wsId }, { $set: { columnId: targetColumn } });
+    await Task.updateMany({ _id: { $in: cardIds }, workspaceId: req.params.wsId }, { $set: { columnId: targetColumn, expiredAlertAcknowledged: true } });
     res.json({ success: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -247,7 +247,8 @@ router.post('/workspaces/:wsId/vault/encrypt', async (req, res) => {
         const { text, password } = req.body;
         if (!text || !password) return res.status(400).json({ error: 'Missing payload' });
         
-        const key = crypto.scryptSync(password, 'salt', 32);
+        const safePassword = String(password);
+        const key = crypto.scryptSync(safePassword, 'salt', 32);
         const iv = crypto.randomBytes(12);
         const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
         
@@ -258,7 +259,7 @@ router.post('/workspaces/:wsId/vault/encrypt', async (req, res) => {
         const payload = Buffer.from(JSON.stringify({ iv: iv.toString('hex'), encryptedData: encrypted, authTag: authTag })).toString('base64');
         res.json({ encrypted: payload });
     } catch (e) {
-        res.status(500).json({ error: 'Encryption failed' });
+        res.status(500).json({ error: 'Encryption failed: ' + e.message });
     }
 });
 
@@ -267,8 +268,9 @@ router.post('/workspaces/:wsId/vault/decrypt', async (req, res) => {
         const { cipherBase64, password } = req.body;
         if (!cipherBase64 || !password) return res.status(400).json({ error: 'Missing payload' });
         
+        const safePassword = String(password);
         const payload = JSON.parse(Buffer.from(cipherBase64, 'base64').toString('utf8'));
-        const key = crypto.scryptSync(password, 'salt', 32);
+        const key = crypto.scryptSync(safePassword, 'salt', 32);
         
         const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(payload.iv, 'hex'));
         decipher.setAuthTag(Buffer.from(payload.authTag, 'hex'));
@@ -279,7 +281,7 @@ router.post('/workspaces/:wsId/vault/decrypt', async (req, res) => {
         res.json({ decrypted });
     } catch (e) {
         // e.g. wrong password -> auth tag mismatch -> Decipher final failed
-        res.status(401).json({ error: 'Incorrect password. Unable to decrypt secret.' });
+        res.status(401).json({ error: 'Incorrect password. Unable to decrypt secret. ' + e.message });
     }
 });
 

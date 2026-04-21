@@ -21,7 +21,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             // Check for expired cards
             const now = new Date();
             const expired = data.filter(c => {
-                if (c.archived || !c.dueDate) return false;
+                if (c.archived || !c.dueDate || c.expiredAlertAcknowledged) return false;
                 const due = new Date(c.dueDate);
                 const diffDays = (now - due) / (1000 * 60 * 60 * 24);
                 return diffDays >= 3;
@@ -662,7 +662,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
                             <button onClick={async () => {
                                 const cardIds = expiredCards.map(c => c.id || c._id);
                                 await fetch(`/api/workspaces/${workspace.id}/tasks/bulk-archive`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ cardIds }) });
-                                setCards(prev => prev.map(c => cardIds.includes(c.id || c._id) ? { ...c, archived: true } : c));
+                                setCards(prev => prev.map(c => cardIds.includes(c.id || c._id) ? { ...c, archived: true, expiredAlertAcknowledged: true } : c));
                                 setShowExpiredModal(false);
                                 showToast("Expired tasks archived. 📦");
                             }} className="w-full py-3 bg-red-500 text-white rounded-xl text-xs font-black tracking-widest uppercase shadow-lg shadow-red-200 hover:scale-105 active:scale-95 transition">
@@ -677,7 +677,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
                                     if (!selectedMoveCol) return;
                                     const cardIds = expiredCards.map(c => c.id || c._id);
                                     await fetch(`/api/workspaces/${workspace.id}/tasks/bulk-move`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ cardIds, targetColumn: selectedMoveCol }) });
-                                    setCards(prev => prev.map(c => cardIds.includes(c.id || c._id) ? { ...c, columnId: selectedMoveCol, col: selectedMoveCol } : c));
+                                    setCards(prev => prev.map(c => cardIds.includes(c.id || c._id) ? { ...c, columnId: selectedMoveCol, col: selectedMoveCol, expiredAlertAcknowledged: true } : c));
                                     setShowExpiredModal(false);
                                     showToast(`Tasks moved. 🚀`);
                                 }} className="px-6 py-3 bg-black text-white rounded-xl text-xs font-black tracking-widest uppercase shadow-lg shadow-gray-300 hover:scale-105 active:scale-95 transition">
