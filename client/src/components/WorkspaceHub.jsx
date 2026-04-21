@@ -8,7 +8,7 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
             const [pinLoading, setPinLoading] = React.useState(false);
 
             React.useEffect(() => {
-                if (user?.method === 'google' && !user?.vaultPin) {
+                if (!user?.vaultPin) {
                     setPinPrompt({ isOpen: true, pin: '', confirm: '' });
                 }
             }, [user]);
@@ -112,7 +112,7 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                     <div className="max-w-[320px] w-full bg-white p-8 rounded-[2rem] shadow-2xl text-center">
                         <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6"><window.Icon name="shield-alert" size={32} className="text-blue-500" /></div>
                         <h2 className="text-2xl font-black italic tracking-tighter mb-2">Vault Security</h2>
-                        <p className="text-[10px] text-gray-500 mb-6">Since you logged in with Google, you must create a Master PIN to securely encrypt your Vault secrets. Minimum 6 characters.</p>
+                        <p className="text-[10px] text-gray-500 mb-6">You must create a Master PIN to securely encrypt your Vault secrets. Minimum 6 characters.</p>
                         <div className="space-y-4">
                             <input className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-400 text-black font-black" type="password" placeholder="Enter PIN" autoFocus required value={pinPrompt.pin} onChange={e => { setPinPrompt(p => ({ ...p, pin: e.target.value })); setPinError(''); }} onKeyDown={e => e.key === 'Enter' && handleCreatePin(e)} />
                             <input className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-400 text-black font-black" type="password" placeholder="Confirm PIN" required value={pinPrompt.confirm} onChange={e => { setPinPrompt(p => ({ ...p, confirm: e.target.value })); setPinError(''); }} onKeyDown={e => e.key === 'Enter' && handleCreatePin(e)} />

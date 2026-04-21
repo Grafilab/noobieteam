@@ -12,7 +12,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             const res = await fetch('/api/workspaces/' + workspace.id + '/vault/encrypt', { 
                 method: 'POST', 
                 headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ text: JSON.stringify(newSecret), password: user?.password || user?.vaultPin }) 
+                body: JSON.stringify({ text: JSON.stringify(newSecret), password: user?.vaultPin || user?.password }) 
             });
             if (!res.ok) throw new Error('Encryption failed');
             const data = await res.json();
@@ -74,7 +74,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
     };
 
     const handleReveal = function(id) {
-        if (user?.method === 'google' && !user?.vaultPin) {
+        if (!user?.vaultPin) {
             setPinPrompt({ isOpen: true, pin: '', confirm: '' });
             return;
         }
@@ -88,7 +88,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
         setRevealError('');
         try {
             const s = secrets.find(x => (x.id === revealPrompt.id || x._id === revealPrompt.id));
-            const payloadPass = user?.method === 'google' ? await window.inHouseHash(revealPrompt.pass) : revealPrompt.pass;
+            const payloadPass = await window.inHouseHash(revealPrompt.pass);
             const res = await fetch('/api/workspaces/' + workspace.id + '/vault/decrypt', { 
                 method: 'POST', 
                 headers: {'Content-Type':'application/json'}, 
@@ -157,7 +157,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
                     <div className="max-w-[320px] w-full bg-white p-8 rounded-[2rem] shadow-2xl text-center">
                         <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6"><window.Icon name="shield-alert" size={32} className="text-blue-500" /></div>
                         <h2 className="text-2xl font-black italic tracking-tighter mb-2">Vault Security</h2>
-                        <p className="text-[10px] text-gray-500 mb-6">Since you logged in with Google, you must create a Master PIN to securely encrypt your Vault secrets. Minimum 6 characters.</p>
+                        <p className="text-[10px] text-gray-500 mb-6">You must create a Master PIN to securely encrypt your Vault secrets. Minimum 6 characters.</p>
                         <div className="space-y-4">
                             <input className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-400 text-black font-black" type="password" placeholder="Enter PIN" autoFocus required value={pinPrompt.pin} onChange={e => { setPinPrompt(p => Object.assign({}, p, { pin: e.target.value })); setPinError(''); }} onKeyDown={e => e.key === 'Enter' && handleCreatePin(e)} />
                             <input className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-400 text-black font-black" type="password" placeholder="Confirm PIN" required value={pinPrompt.confirm} onChange={e => { setPinPrompt(p => Object.assign({}, p, { confirm: e.target.value })); setPinError(''); }} onKeyDown={e => e.key === 'Enter' && handleCreatePin(e)} />
@@ -203,7 +203,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
                 </button>
             }>
                 <div className="space-y-2">
-                    <p className="mb-2 font-bold text-gray-600 text-sm">Re-type your {user?.method === 'google' ? 'Master PIN' : 'Noobieteam password'} to decrypt.</p>
+                    <p className="mb-2 font-bold text-gray-600 text-sm">Re-type your Master PIN to decrypt.</p>
                     <input 
                         className={"w-full p-4 bg-gray-50 rounded-2xl border-2 outline-none text-black transition font-black text-xs " + (revealError ? "border-red-500 animate-shake focus:border-red-500" : "border-gray-100 focus:border-black")} 
                         type="password" 
@@ -211,7 +211,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
                         onChange={e => { setRevealPrompt(Object.assign({}, revealPrompt, { pass: e.target.value })); setRevealError(''); }} 
                         autoFocus 
                         onKeyDown={e => e.key === 'Enter' && processReveal()} 
-                        placeholder={user?.method === 'google' ? 'Master PIN' : 'Master Password'}
+                        placeholder="Master PIN"
                     />
                     {revealError && <p className="text-red-500 text-xs font-bold mt-2 ml-1">{revealError}</p>}
                 </div>
