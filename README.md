@@ -1,5 +1,7 @@
 # Noobieteam: The Next Gen Productivity Platform
 
+![Noobieteam Header](https://via.placeholder.com/1200x400?text=Noobieteam+Next+Gen+Productivity+Platform)
+
 **Noobieteam** is a powerful, open-source Next Gen Productivity Platform designed for modern teams. It is an all-in-one Kanban application that seamlessly manages tasks, securely stores credentials, builds technical documentation, and integrates AI assistance—all within a single, highly collaborative workspace.
 
 Forget jumping between Jira for tasks, 1Password for secrets, GitBook for docs, and Spotify for focus. Noobieteam brings it all together with an "Instagram-style" minimalist UI.
@@ -52,7 +54,7 @@ Noobieteam is designed for easy on-premise deployment. Follow these exact steps 
 
 ### Prerequisites
 - Node.js (v18 or higher)
-- MongoDB running locally (or use the built-in memory server fallback) [https://www.mongodb.com/docs/v8.0/tutorial/install-mongodb-on-ubuntu/]
+- MongoDB running locally (or use the built-in memory server fallback)
 - Git
 
 ### 1. Clone the Repository
@@ -79,28 +81,40 @@ cp .env.template .env
 PORT=3000
 
 # Secret for signing JSON Web Tokens
-JWT_SECRET=[REPLACE_WITH_YOUR_SUPER_SECRET_KEY]
+JWT_SECRET=YOUR_JWT_SECRET_HERE
 
 # Optional: MongoDB Connection String (Will fallback to memory server if empty or connection fails)
 MONGODB_URI=mongodb://localhost:27017/noobieteam
 
 # Google OAuth 2.0 Credentials (Required for "Sign in with Google")
 # Obtain these from the Google Cloud Console (APIs & Services -> Credentials).
-GOOGLE_CLIENT_ID=[REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID]
-GOOGLE_CLIENT_SECRET=[REPLACE_WITH_YOUR_GOOGLE_CLIENT_SECRET]
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID_HERE
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET_HERE
 
 # Super Admin Role
 # The user with this exact email is granted Super Admin privileges.
 # They bypass all workspace invitation checks and can delete workspaces.
-ADMIN_EMAIL=[REPLACE_WITH_ADMIN_EMAIL]
+ADMIN_EMAIL=YOUR_ADMIN_EMAIL_HERE
 
 # --- AI Assistant (Multi-Model Support) ---
 DEFAULT_AI_PROVIDER=gemini # Options: openai, gemini, qwen, kimi
 
 # Gemini Configuration (Required if DEFAULT_AI_PROVIDER=gemini)
-GEMINI_API_KEY=[REPLACE_WITH_YOUR_GEMINI_API_KEY]
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
 GEMINI_MODEL_ID=gemini-3-flash-preview
+
+# OpenAI Configuration
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Qwen Configuration
+QWEN_API_KEY=YOUR_QWEN_API_KEY_HERE
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+
+# Kimi Configuration
+KIMI_API_KEY=YOUR_KIMI_API_KEY_HERE
+KIMI_BASE_URL=https://api.moonshot.cn/v1
 ```
 
 ### 4. Start the Application
