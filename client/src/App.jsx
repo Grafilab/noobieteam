@@ -239,30 +239,28 @@ window.Main = () => {
     const showConfirm = (title, message, callback) => setModalState({ isOpen: true, type: 'confirm', title, message, callback });
     const showPrompt = (title, message, callback, isPassword = false) => setModalState({ isOpen: true, type: 'prompt', title, message, callback, promptValue: '', isPassword });
 
+    const path = window.location.pathname;
+    const isPublicDocs = path.startsWith('/docs/');
+    let publicWsPath = '';
+    let publicFolderName = '';
+    
+    if (isPublicDocs) {
+        const parts = path.split('/');
+        publicWsPath = parts[2];
+        publicFolderName = parts[3];
+    }
+    
     return (
         <ErrorBoundary>
         <window.ModalContext.Provider value={{ showAlert, showConfirm, showPrompt }}>
             <window.JukeboxContext.Provider value={{ ...player, setUrl, setMinimized: (m) => setPlayer(prev => ({...prev, isMinimized: m})) }}>
                 <window.ToastContext.Provider value={{ showToast }}>
-                {!user ? <window.AuthScreen onAuthSuccess={setUser} /> :
+                {isPublicDocs ? <window.PublicDocsView wsPath={publicWsPath} folderName={publicFolderName} /> :
+                !user ? <window.AuthScreen onAuthSuccess={setUser} /> :
                  !ws ? <window.WorkspaceHub user={user} onLogout={() => { setUser(null); showToast("Session ended. 👋"); }} onSelect={setWs} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} /> :
                  <window.WorkspaceView workspace={ws} onBack={() => setWs(null)} user={user} onLogout={() => { setWs(null); setUser(null); showToast("Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} isJukeboxActive={!!player.url && !player.isMinimized} />}
                 <window.FloatingJukebox />
                 <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} onRemove={() => removeToast(t.id)} />)}</div>
-                
-                <window.GlobalModal 
-                    isOpen={modalState.isOpen} 
-                    onClose={() => setModalState({ ...modalState, isOpen: false })} 
-                    title={modalState.title}
-                    footer={
-                        modalState.type === 'alert' ? <button onClick={() => setModalState({ ...modalState, isOpen: false })} className="bg-black text-white px-8 py-3 rounded-full text-[9px] font-black uppercase active:scale-95 transition text-white">Acknowledge</button> :
-                        modalState.type === 'confirm' ? <><button onClick={() => setModalState({ ...modalState, isOpen: false })} className="text-gray-400 font-black text-[9px] uppercase px-6">Cancel</button><button onClick={() => { if(modalState.callback) modalState.callback(); setModalState({ ...modalState, isOpen: false }); }} className="bg-red-500 text-white px-8 py-3 rounded-full text-[9px] font-black uppercase shadow-lg active:scale-95 transition text-white">Confirm Access</button></> :
-                        <button onClick={() => { if (modalState.callback) modalState.callback(modalState.promptValue); setModalState({ ...modalState, isOpen: false }); }} className="bg-black text-white px-8 py-3 rounded-full text-[9px] font-black uppercase active:scale-95 transition text-white">Process</button>
-                    }
-                >
-                    <p className="mb-4 font-bold text-gray-600 text-base leading-relaxed whitespace-pre-line text-black">{modalState.message}</p>
-                    {modalState.type === 'prompt' && <input className="w-full p-4 bg-gray-50 rounded-2xl border-2 border-gray-100 outline-none text-black focus:border-black transition font-black text-xs" type={modalState.isPassword ? "password" : "text"} value={modalState.promptValue} onChange={e => setModalState({ ...modalState, promptValue: e.target.value })} autoFocus onKeyDown={e => e.key === 'Enter' && (modalState.callback(modalState.promptValue), setModalState({ ...modalState, isOpen: false }))} />}
-                </window.GlobalModal>
                 </window.ToastContext.Provider>
             </window.JukeboxContext.Provider>
         </window.ModalContext.Provider>

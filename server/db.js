@@ -110,6 +110,7 @@ const docSchema = new mongoose.Schema({
   type: { type: String, enum: ['TEXT', 'API'], default: 'TEXT' },
   content: String,
   parentId: String,
+  folderId: String, // Reference to Folder
   order: Number,
   apiSpec: {
     method: { type: String, enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], default: 'GET' },
@@ -123,6 +124,17 @@ const docSchema = new mongoose.Schema({
 }, { timestamps: true });
 docSchema.set('toJSON', { virtuals: true });
 const Doc = mongoose.model('Doc', docSchema);
+
+const folderSchema = new mongoose.Schema({
+  workspaceId: { type: String, required: true },
+  name: { type: String, required: true },
+  slug: { type: String }, // For dynamic URL e.g. folder name in url
+  order: Number,
+  createdBy: String
+}, { timestamps: true });
+folderSchema.set('toJSON', { virtuals: true });
+const Folder = mongoose.model('Folder', folderSchema);
+
 
 const envSchema = new mongoose.Schema({
   workspaceId: { type: String, required: true },
@@ -146,4 +158,4 @@ const emojiEventSchema = new mongoose.Schema({
 emojiEventSchema.set('toJSON', { virtuals: true });
 const EmojiEvent = mongoose.model('EmojiEvent', emojiEventSchema);
 
-module.exports = { connectDB, User, Workspace, Task, Doc, Env, EmojiEvent };
+module.exports = { connectDB, User, Workspace, Task, Doc, Folder, Env, EmojiEvent };

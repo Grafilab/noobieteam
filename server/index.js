@@ -34,6 +34,11 @@ app.delete('/api/workspaces/:id', async (req, res) => {
 
 // Use other API routes
 app.use('/api', apiRoutes);
+        
+// Dynamic Catch-All Route for Frontend Public Documentation
+app.get('/docs/*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/index.html'));
+});
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
