@@ -60,12 +60,11 @@
   3.  **DocTab Button Cleanliness:** Verified that all `window.alert` debug hooks have been removed from the 'New Folder', 'New Document', and 'New API Endpoint' action buttons in `DocTab.jsx`.
 - **Result:** All pending hotfixes for the Docs module and Jukebox are verified as 100% operational.
 
-## 2026-04-21 Frontend Compilation & Cache Wipe (CTO)
-- **Project:** Noobieteam
-- **Task:** Verify the frontend compilation after the Programmer's hotfix for the WorkspaceView "Component Crash Detected" and restart the server on a new dynamic port to flush caching.
-- **Status:** Completed.
-- **Outcome:** I audited the `WorkspaceView.jsx` modifications. The `filtered.filter is not a function` error inside the AI Assistant `query_board` loop has been securely resolved by ensuring the `filtered` variable initializes properly as an array before filtering methods are chained. To ensure the Boss doesn't hit a stale Vite/Browser cache, the backend server was completely purged and rebooted. The application is now serving the latest hotfix payload cleanly on dynamic port 9114.
-
-- **Date:** 2026-04-21
-  **Action:** Fixed React "Component Crash Detected" on workspace load.
-  **Outcome:** Added robust API payload validation to prevent `filter is not a function` during component hydration, deduped incoming MongoDB arrays to enforce unique `react-beautiful-dnd` Draggable IDs, and safely stripped legacy `backlog` stages from standard column mapping to eliminate cross-Droppable ID collisions.
+## 2026-04-21 UI/UX Specs for Mobile Responsiveness & API Testing
+- **Action:** Created `MOBILE_UX_SPECS.md` detailing the responsive layout transformations for mobile devices (`< 768px`).
+- **Specs Added:** 
+  1. Defined Tailwind breakpoints to transition the Kanban board from a horizontal scroll to vertically stacked columns (`flex-col`).
+  2. Specified a Hamburger Menu (`lucide-menu`) to replace the fixed sidebar on small screens.
+  3. Ensured cards and modals use relative width (`w-full`, `w-[95%]`) instead of fixed pixels to prevent horizontal overflow.
+  4. Designed a 'Live API Test' panel for the Dynamic Docs page, allowing external users to view real-time Request payloads and Response outputs (status, time, JSON) directly on the page.
+- **Outcome:** The UX blueprints for mobile optimization and the interactive API test panel are complete. Handed off to the CTO and Programmer for frontend implementation.
