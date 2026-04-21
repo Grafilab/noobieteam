@@ -107,7 +107,7 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                 <div className="min-h-screen bg-white animate-fade-in relative flex flex-col text-black">
                 {pinPrompt.isOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 animate-fade-in">
-                    <div className="max-w-[320px] w-full bg-white p-8 rounded-[2rem] shadow-2xl text-center">
+                    <div className="max-w-[320px] w-[95%] mx-auto bg-white p-6 md:p-8 rounded-[2rem] shadow-2xl text-center">
                         <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6"><window.Icon name="shield-alert" size={32} className="text-blue-500" /></div>
                         <h2 className="text-2xl font-black italic tracking-tighter mb-2">Vault Security</h2>
                         <p className="text-[10px] text-gray-500 mb-6">You must create a Master PIN to securely encrypt your Vault secrets. Minimum 6 characters.</p>
@@ -134,10 +134,10 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                         <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} />
                     </nav>
                     {showUserManagement && <window.UserManagement user={user} adminEmail={adminEmail} onClose={() => setShowUserManagement(false)} />}
-                    <div className="max-w-5xl mx-auto p-10 flex-1">
-                        <header className="mb-12 flex justify-between items-end">
+                    <div className="max-w-5xl mx-auto p-4 md:p-10 flex-1">
+                        <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                             <div>
-                                <h2 className="text-5xl font-black tracking-tighter">{viewArchived ? 'Archive' : 'Workspaces'}</h2>
+                                <h2 className="text-3xl md:text-5xl font-black tracking-tighter">{viewArchived ? 'Archive' : 'Workspaces'}</h2>
                                 <p className="text-gray-400 mt-2 font-bold uppercase tracking-[0.2em] text-[10px]">Project Command Hub</p>
                             </div>
                             <div className="flex gap-4">

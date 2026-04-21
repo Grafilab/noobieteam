@@ -141,7 +141,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete }
 
     return (
         <div className="fixed inset-0 z-[1600] flex items-center justify-center p-4 glass-blur animate-fade-in text-black">
-            <div className="bg-white w-full max-w-3xl rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden animate-pop flex flex-col max-h-[90vh]">
+            <div className="bg-white w-[95%] md:w-full max-w-3xl rounded-3xl md:rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden animate-pop flex flex-col max-h-[90vh] md:max-h-[85vh]">
                 <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
                     <input className="text-2xl font-black focus:outline-none w-full bg-transparent tracking-tighter" value={title} onChange={e => setTitle(e.target.value)} />
                     <div className="flex gap-2">
@@ -149,8 +149,8 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete }
                         <button onClick={onClose} className="p-3 hover:bg-gray-100 rounded-full transition"><window.Icon name="x" size={20} /></button>
                     </div>
                 </div>
-                <div className="p-8 space-y-8 overflow-y-auto no-scrollbar flex-1">
-                    <div className="grid grid-cols-2 gap-8">
+                <div className="p-4 md:p-8 space-y-6 md:space-y-8 overflow-y-auto no-scrollbar flex-1">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                         <div><label className="block text-sm font-black text-black uppercase tracking-widest mb-3">Deadline</label><input type="date" className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 text-[11px] font-black" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
                         <div><label className="block text-sm font-black text-black uppercase tracking-widest mb-3">Priority</label>
                             <div className="flex gap-1.5 p-1 bg-gray-50 rounded-2xl border border-gray-100">

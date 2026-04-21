@@ -95,9 +95,13 @@ Stores environment-specific variables for the "Try it out" feature.
         *   **Icons:** Use distinct Lucide icons for `lucide-folder`, `lucide-file-text`, and `lucide-braces` (for APIs).
     *   **Central Content:** Wide reading area for text docs; split-pane view for API testing (Request on top/left, Response on bottom/right).
 *   **Dynamic Public Documentation UI (External View):**
-    *   **Layout:** A streamlined, read-only interface.
+    *   **Layout:** A streamlined interface optimized for public reading and API testing.
     *   **Sidebar:** Locks to the specific folder's contents. Only displays docs/APIs within the requested `[folder-name]`.
-    *   **Header:** Minimalist. Displays the Workspace name, Folder name, and an optional "Back to Workspace" link for authenticated members. No editing tools or "Try it out" environments (unless explicitly permitted in a future release).
+    *   **Header:** Minimalist. Displays the Workspace name, Folder name, and an optional "Back to Workspace" link for authenticated members. No editing tools.
+    *   **Live API Test Panel:** When an API endpoint document is selected, the right-hand side of the main content area (or the bottom stack on mobile) must feature a 'Live API Test' panel.
+        *   This panel must display the current Request payload (headers, params, body).
+        *   It must feature a prominent "Send Request" button.
+        *   It must have a dedicated Output area displaying the real-time Response status code, time, and formatted JSON payload. This allows external developers to test APIs on the spot.
     *   **Search:** Scoped strictly to the contents of the public folder.
 
 ## 5. Technical Alignment

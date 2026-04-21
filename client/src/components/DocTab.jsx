@@ -130,6 +130,7 @@ window.DocTab = ({ workspaceId, user }) => {
     const [expandedFolders, setExpandedFolders] = React.useState({});
     const [loading, setLoading] = React.useState(true);
     const [isDocEditing, setIsDocEditing] = React.useState(false);
+    const [showMobileSidebar, setShowMobileSidebar] = React.useState(false);
 
     React.useEffect(() => {
         setLoading(true);
@@ -219,9 +220,14 @@ window.DocTab = ({ workspaceId, user }) => {
     return (
         <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-[#FAFAFA] animate-fade-in text-black">
             {/* Sidebar */}
-            <div className="w-72 bg-white border-r border-gray-100 flex flex-col shadow-sm z-10 relative">
+            <div className={`${showMobileSidebar ? 'fixed inset-0 z-50 flex w-full' : 'hidden'} md:flex md:w-72 bg-white border-r border-gray-100 flex-col shadow-sm z-10 md:relative`}>
                 <div className="p-6 border-b border-gray-50 flex justify-between items-center">
                     <h2 className="text-xl font-black tracking-tight">Docs & API</h2>
+                    {showMobileSidebar && (
+                        <button onClick={() => setShowMobileSidebar(false)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg absolute top-4 right-4 z-50">
+                            <window.Icon name="x" size={20} />
+                        </button>
+                    )}
                     <div className="flex gap-2">
                         <button onClick={addFolder} className="p-2 bg-gray-50 hover:bg-gray-100 rounded-lg transition text-purple-500 cursor-pointer" title="New Folder"><window.Icon name="folder-plus" size={16} /></button>
                         <button onClick={() => addDoc('TEXT')} className="p-2 bg-gray-50 hover:bg-gray-100 rounded-lg transition text-blue-500 cursor-pointer" title="New Document"><window.Icon name="file-text" size={16} /></button>
@@ -250,7 +256,7 @@ window.DocTab = ({ workspaceId, user }) => {
                                         {folderDocs.map(doc => {
                                             const docId = doc.id || doc._id;
                                                                                         return (
-                                                <div key={docId} onClick={() => setSelectedDocId(docId)} className={`group flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50 text-gray-600'}`}>
+                                                <div key={docId} onClick={() => { setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`group flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-50 text-gray-600'}`}>
                                                     <div className="flex items-center gap-2 truncate">
                                                         <window.Icon name={doc.type === 'API' ? "zap" : "file-text"} size={14} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                                         <span className="text-xs font-bold truncate">{doc.title || 'Untitled'}</span>
@@ -274,7 +280,7 @@ window.DocTab = ({ workspaceId, user }) => {
                     {docs.filter(d => !d.folderId).map(doc => {
                         const docId = doc.id || doc._id;
                         return (
-                        <div key={docId} onClick={() => setSelectedDocId(docId)} className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-blue-50 border border-blue-100 text-blue-600 shadow-sm' : 'hover:bg-gray-50 border border-transparent'}`}>
+                        <div key={docId} onClick={() => { setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-blue-50 border border-blue-100 text-blue-600 shadow-sm' : 'hover:bg-gray-50 border border-transparent'}`}>
                             <div className="flex items-center gap-3">
                                 {doc.type === 'API' ? (
                                     <span className={`text-[9px] font-black w-10 text-center rounded px-1 py-0.5 ${doc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : doc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : doc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{doc.apiSpec?.method}</span>

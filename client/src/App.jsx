@@ -224,6 +224,47 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
     const [workspace, setWorkspace] = React.useState(null);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState(null);
+    const [testResponse, setTestResponse] = React.useState(null);
+    const [testLoading, setTestLoading] = React.useState(false);
+    const [showTestPanel, setShowTestPanel] = React.useState(false);
+    const [showMobileSidebar, setShowMobileSidebar] = React.useState(false);
+    
+    const handleTestApi = async (spec) => {
+        setTestLoading(true);
+        setTestResponse(null);
+        try {
+            let url = spec.url;
+            if (spec.queryParams && spec.queryParams.length > 0) {
+                const params = new URLSearchParams();
+                spec.queryParams.forEach(q => { if(q.key) params.append(q.key, q.value); });
+                url += '?' + params.toString();
+            }
+            const headers = {};
+            if (spec.headers) {
+                spec.headers.forEach(h => { if(h.key) headers[h.key] = h.value; });
+            }
+            if (!headers['Content-Type'] && spec.method !== 'GET') {
+                headers['Content-Type'] = 'application/json';
+            }
+            
+            const start = Date.now();
+            const res = await fetch(url, {
+                method: spec.method,
+                headers,
+                body: spec.method !== 'GET' && spec.body ? spec.body : undefined
+            });
+            const time = Date.now() - start;
+            
+            let data;
+            try { data = await res.json(); } catch(e) { data = await res.text(); }
+            
+            setTestResponse({ status: res.status, time, data });
+        } catch (err) {
+            setTestResponse({ status: 'ERROR', time: 0, data: err.message });
+        } finally {
+            setTestLoading(false);
+        }
+    };
     const [selectedDocId, setSelectedDocId] = React.useState(null);
 
     React.useEffect(() => {
@@ -258,19 +299,26 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
     return (
         <div className="min-h-screen bg-white flex text-black font-sans">
             {/* Sidebar */}
-            <div className="w-72 bg-gray-50 border-r border-gray-100 flex flex-col h-screen sticky top-0">
-                <div className="p-8 border-b border-gray-200">
+            <div className={`${showMobileSidebar ? 'fixed inset-0 z-50 flex w-full' : 'hidden'} md:flex md:w-72 bg-gray-50 border-r border-gray-100 flex-col h-screen md:sticky top-0`}>
+                <div className="p-6 md:p-8 border-b border-gray-200 flex justify-between items-start">
+                    <div>
                     <h1 className="text-xl font-black tracking-tighter mb-2">{workspace?.name || 'Workspace'}</h1>
                     <div className="flex items-center gap-2 text-gray-500">
                         <window.Icon name="folder" size={14} />
                         <span className="text-xs font-bold uppercase tracking-widest">{folder?.name || 'Documentation'}</span>
                     </div>
+                    </div>
+                    {showMobileSidebar && (
+                        <button onClick={() => setShowMobileSidebar(false)} className="md:hidden p-2 text-gray-500 hover:bg-gray-200 rounded-lg">
+                            <window.Icon name="x" size={20} />
+                        </button>
+                    )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-1">
                     {docs.map(doc => {
                         const docId = doc.id || doc._id;
                         return (
-                            <div key={docId} onClick={() => setSelectedDocId(docId)} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-white shadow-sm text-blue-600 font-bold border border-gray-200' : 'hover:bg-gray-100 text-gray-600 font-medium border border-transparent'}`}>
+                            <div key={docId} onClick={() => { setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-white shadow-sm text-blue-600 font-bold border border-gray-200' : 'hover:bg-gray-100 text-gray-600 font-medium border border-transparent'}`}>
                                 {doc.type === 'API' ? (
                                     <span className={`text-[9px] font-black w-10 text-center rounded px-1 py-0.5 ${doc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : doc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : doc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{doc.apiSpec?.method}</span>
                                 ) : (
@@ -285,13 +333,17 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
 
             {/* Content Area */}
             <div className="flex-1 flex flex-col h-screen overflow-hidden">
-                <header className="h-16 border-b border-gray-100 flex items-center px-10 bg-white">
+                <header className="h-16 border-b border-gray-100 flex items-center px-4 md:px-10 bg-white gap-4">
+                    <button onClick={() => setShowMobileSidebar(true)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                        <window.Icon name="menu" size={20} />
+                    </button>
                     <h2 className="text-lg font-black tracking-tight">{activeDoc ? activeDoc.title : 'Select a document'}</h2>
                 </header>
-                <div className="flex-1 overflow-y-auto p-10 bg-white">
+                <div className="flex-1 overflow-y-auto p-4 md:p-10 bg-white">
                     {activeDoc ? (
                         activeDoc.type === 'API' ? (
-                            <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+                            <div className="max-w-4xl mx-auto animate-fade-in">
+                            <div className="space-y-8">
                                 <div className="flex items-center gap-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
                                     <span className={`font-black px-3 py-1 rounded-lg text-xs ${activeDoc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : activeDoc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : activeDoc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{activeDoc.apiSpec?.method}</span>
                                     <code className="text-sm font-bold text-gray-800">{activeDoc.apiSpec?.url || 'No URL specified'}</code>
@@ -331,6 +383,28 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                         <pre className="p-4 bg-gray-900 text-gray-100 rounded-2xl text-xs overflow-x-auto font-mono"><code>{activeDoc.apiSpec.body}</code></pre>
                                     </div>
                                 )}
+                            
+                                <div className="mt-12 pt-8 border-t border-gray-100">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-black">Live API Test</h3>
+                                        <button onClick={() => { setShowTestPanel(true); handleTestApi(activeDoc.apiSpec); }} disabled={testLoading} className="px-6 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition disabled:opacity-50">
+                                            {testLoading ? 'Sending...' : 'Send Request'}
+                                        </button>
+                                    </div>
+                                    
+                                    {showTestPanel && testResponse && (
+                                        <div className="bg-gray-50 border border-gray-200 rounded-2xl overflow-hidden animate-fade-in">
+                                            <div className="bg-gray-100 border-b border-gray-200 px-6 py-3 flex gap-6 text-xs font-bold uppercase tracking-widest text-gray-500">
+                                                <span className={testResponse.status === 200 || testResponse.status === 201 ? 'text-emerald-600' : 'text-red-600'}>Status: {testResponse.status}</span>
+                                                <span>Time: {testResponse.time}ms</span>
+                                            </div>
+                                            <pre className="p-6 text-xs text-gray-800 overflow-x-auto font-mono">
+                                                {typeof testResponse.data === 'object' ? JSON.stringify(testResponse.data, null, 2) : testResponse.data}
+                                            </pre>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                             </div>
                         ) : (
                             <div className="max-w-4xl mx-auto">
