@@ -391,6 +391,39 @@ window.Main = () => {
                  <window.WorkspaceView workspace={ws} onBack={() => setWs(null)} user={user} onLogout={() => { setWs(null); setUser(null); showToast("Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} isJukeboxActive={!!player.url && !player.isMinimized} />}
                 <window.FloatingJukebox />
                 <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} onRemove={() => removeToast(t.id)} />)}</div>
+                {modalState.isOpen && (
+                    <window.GlobalModal isOpen={true} onClose={() => setModalState(prev => ({...prev, isOpen: false}))} title={modalState.title} footer={
+                        <div className="flex gap-2">
+                            {modalState.type !== 'alert' && <button onClick={() => setModalState(prev => ({...prev, isOpen: false}))} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-bold transition">Cancel</button>}
+                            <button onClick={() => {
+                                setModalState(prev => ({...prev, isOpen: false}));
+                                if (modalState.callback) {
+                                    if (modalState.type === 'prompt') modalState.callback(modalState.promptValue);
+                                    else modalState.callback();
+                                }
+                            }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition shadow-md shadow-blue-100">
+                                {modalState.type === 'alert' ? 'OK' : 'Confirm'}
+                            </button>
+                        </div>
+                    }>
+                        <p>{modalState.message}</p>
+                        {modalState.type === 'prompt' && (
+                            <input 
+                                autoFocus 
+                                type={modalState.isPassword ? "password" : "text"} 
+                                value={modalState.promptValue} 
+                                onChange={e => setModalState(prev => ({...prev, promptValue: e.target.value}))} 
+                                className="w-full mt-4 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-400" 
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                        setModalState(prev => ({...prev, isOpen: false}));
+                                        if (modalState.callback) modalState.callback(modalState.promptValue);
+                                    }
+                                }}
+                            />
+                        )}
+                    </window.GlobalModal>
+                )}
                 </window.ToastContext.Provider>
             </window.JukeboxContext.Provider>
         </window.ModalContext.Provider>

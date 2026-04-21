@@ -122,7 +122,7 @@ window.DocTab = ({ workspaceId, user }) => {
         setIsApiLoading(false);
     };
 
-    const { showConfirm, showPrompt } = window.useModals();
+    const { showConfirm, showPrompt, showAlert } = window.useModals();
     const { showToast } = window.useToasts();
     const [docs, setDocs] = React.useState([]);
     const [folders, setFolders] = React.useState([]);
