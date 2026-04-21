@@ -73,6 +73,7 @@ const taskSchema = new mongoose.Schema({
   content: String,
   urgency: { type: String, enum: ['LOW', 'MED', 'HIGH'], default: 'LOW' },
   dueDate: Date,
+  expiredAlertAcknowledged: { type: Boolean, default: false },
   order: Number,
   assignees: [{ type: String }],
   checklist: [{

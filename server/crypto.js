@@ -15,6 +15,10 @@ const ITERATIONS = 100000;
 const deriveKey = (password) => {
     // Generate a deterministic 16-byte salt from the password itself for demonstration
     // (This ensures decryption works across sessions without altering the User schema, though a unique DB salt is preferred).
+    if (typeof password !== 'string') {
+        console.error("[VAULT ERROR] deriveKey received a non-string password payload. Type:", typeof password, "Value:", password);
+        password = password ? String(password) : ""; 
+    }
     const salt = crypto.createHash('sha256').update(password + '_nt_salt').digest().slice(0, SALT_LENGTH);
     return crypto.pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, 'sha256');
 };
