@@ -255,7 +255,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
                     </div>
 
                     <div className="border-t border-gray-100 pt-8 mt-4">
-                        <label className="block text-sm font-black text-black uppercase tracking-widest mb-6">{t('labels.mission_chatter')}</label>
+                        <label className="block text-sm font-black text-black uppercase tracking-widest mb-6">{t('labels.mission_chatter_title')}</label>
                         <div className="space-y-4 mb-6">
                             {comments.map(cmt => {
                                 const m = getMemberData(cmt.authorEmail);
@@ -302,7 +302,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
                                     </div>
                                 )}
                             </div>
-                            <button onClick={submitComment} className="bg-blue-500 hover:bg-blue-600 text-white rounded-2xl px-6 font-black uppercase tracking-widest text-[10px] transition"><window.Icon name="send" size={16} /></button>
+                            <button onClick={submitComment} title={t('actions.submit_intel')} className="bg-blue-500 hover:bg-blue-600 text-white rounded-2xl px-6 font-black uppercase tracking-widest text-[10px] transition"><window.Icon name="send" size={16} /></button>
                         </div>
                     </div>
                 </div>
@@ -330,7 +330,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
 </div>
             </div>
             {previewImage && (
-                <window.GlobalModal isOpen={true} onClose={() => setPreviewImage(null)} title={t('labels.attachment_preview') || "Attachment Preview"} footer={<button onClick={() => setPreviewImage(null)} className="bg-black text-white px-8 py-3 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl">{t('actions.close')}</button>}>
+                <window.GlobalModal isOpen={true} onClose={() => setPreviewImage(null)} title={t('labels.attachment_preview')} footer={<button onClick={() => setPreviewImage(null)} className="bg-black text-white px-8 py-3 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl">{t('actions.close')}</button>}>
                     <div className="flex items-center justify-center min-h-[300px]">
                         <img src={previewImage} alt="Preview" className="max-w-full max-h-[70vh] rounded-2xl shadow-lg" />
                     </div>
