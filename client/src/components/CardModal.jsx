@@ -325,7 +325,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
         <button onClick={() => setShowAudit(!showAudit)} className="flex items-center gap-1.5 text-gray-400 hover:text-gray-600 transition text-[10px] font-black uppercase tracking-widest">
             <window.Icon name={showAudit ? "chevron-up" : "chevron-down"} size={14} /> {t('labels.audit_trail')}
         </button>
-        <button onClick={() => onSave({ __v: card.__v, updatedAt: card.updatedAt, title, content, dueDate, urgency, epic, checklist, assignees, attachments, auditEvent: { user: user?.email || 'System', action: 'Updated card contents' } })} className="bg-blue-500 text-white px-10 py-4 rounded-full text-[10px] font-black uppercase tracking-widest active:scale-95 transition shadow-xl">{t('actions.synchronize')}</button>
+        <button onClick={() => onSave({ __v: card.__v, title, content, dueDate, urgency, epic, checklist, assignees, attachments, auditEvent: { user: user?.email || 'System', action: 'Updated card contents' } })} className="bg-blue-500 text-white px-10 py-4 rounded-full text-[10px] font-black uppercase tracking-widest active:scale-95 transition shadow-xl">{t('actions.synchronize')}</button>
     </div>
 </div>
             </div>

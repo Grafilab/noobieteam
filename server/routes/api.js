@@ -74,19 +74,17 @@ router.put('/workspaces/:wsId/tasks/bulk-move', async (req, res) => {
 
 router.put('/tasks/:id', async (req, res) => {
   try {
-    const { auditEvent, __v, updatedAt, ...updateData } = req.body;
+    const { auditEvent, __v, ...updateData } = req.body;
     const task = await Task.findById(req.params.id);
     if (!task) return res.status(404).json({ error: 'Task not found' });
 
     // Enforce optimistic concurrency by setting the version key sent from frontend
     if (__v !== undefined) {
-        task.__v = __v;
+        if (task.__v !== __v) {
+            return res.status(409).json({ error: 'Conflict: This card was modified by another user. Please refresh and try again.' });
+        }
     }
     
-    // Simple manual timestamp-based concurrency check
-    if (updatedAt && new Date(task.updatedAt).getTime() > new Date(updatedAt).getTime()) {
-        return res.status(409).json({ error: 'Conflict: This card was modified by another user recently. Please refresh to avoid overwriting their work.' });
-    }
 
     Object.assign(task, updateData);
 

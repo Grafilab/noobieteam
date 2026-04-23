@@ -8,7 +8,7 @@ const app = express();
 const http = require('http');
 const { Server } = require("socket.io");
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { path: '/api/socket.io', cors: { origin: "*" } });
 
 // Lock Registry: { [cardId]: { user: 'email', socketId: '...', expiresAt: Date.now() } }
 const lockRegistry = {};
@@ -72,7 +72,14 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '../client')));
 
 app.get('/api/config', (req, res) => {
-    res.json({ adminEmail: ADMIN_EMAIL });
+    res.json({ 
+        adminEmail: ADMIN_EMAIL,
+        aiConfig: {
+            model: process.env.GEMINI_MODEL_ID || process.env.OPENAI_MODEL_ID || 'gemini-3-flash-preview',
+            apiKey: process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '[REDACTED_API_KEY]',
+            baseUrl: process.env.GEMINI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/'
+        }
+    });
 });
 
 // RBAC: Secure workspace deletion endpoint

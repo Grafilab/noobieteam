@@ -38,6 +38,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             }
         }).catch(console.error);
         fetch('/api/users').then(r => r.json()).then(data => setAllUsers(Array.isArray(data) ? data : [])).catch(console.error);
+        fetch('/api/config').then(r => r.json()).then(data => { if (data.aiConfig) setAiConfig(data.aiConfig); if (data.adminEmail) window.NT_ADMIN_EMAIL = data.adminEmail; }).catch(console.error);
         
         // Fetch unseen emojis
         const fetchUnseenEmojis = async () => {
@@ -104,7 +105,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         if (!window.io) return;
         // Point socket.io to the dynamic backend path explicitly
         const backendUrl = window.location.origin.includes('task.zettalog.com') ? 'https://task.zettalog.com' : window.location.origin;
-        const socket = window.io(backendUrl, { path: '/socket.io' });
+        const socket = window.io(backendUrl, { path: '/api/socket.io' });
         socketRef.current = socket;
         
         socket.on('card:locked', ({ cardId, user }) => {
@@ -178,7 +179,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         // Stay on screen for 1 minute
         footerQuoteTimeoutRef.current = setTimeout(() => setFooterQuote(null), 60000);
     };
-    const [aiConfig, setAiConfig] = React.useState(() => window.safeParse('nt_ai_config', { model: 'gemini-3-flash-preview', apiKey: '[REDACTED_API_KEY]', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' }));
+    const [aiConfig, setAiConfig] = React.useState({ model: 'gemini-3-flash-preview', apiKey: '[REDACTED_API_KEY]', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' });
     const [isAISettingsOpen, setIsAISettingsOpen] = React.useState(false);
     const [filterKeyword, setFilterKeyword] = React.useState('');
     const [filterAssignee, setFilterAssignee] = React.useState('');
@@ -186,8 +187,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     const [filterExpiring, setFilterExpiring] = React.useState(false);
     const userLabel = React.useMemo(() => user?.email?.charAt(0).toUpperCase() || '?', [user]);
 
-    React.useEffect(() => { localStorage.setItem('nt_ai_config', JSON.stringify(aiConfig)); }, [aiConfig]);
-
+    
     const updateWorkspace = async (fields) => {
         const res = await fetch(`/api/workspaces/${workspace.id}`, {
             method: 'PUT',
@@ -477,9 +477,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     const isAdmin = user?.email === window.NT_ADMIN_EMAIL || user?.email === 'admin@noobieteam.ai';
     const [showUserManagement, setShowUserManagement] = React.useState(false);
 
-    React.useEffect(() => {
-        fetch('/api/config').then(res => res.json()).then(data => { window.NT_ADMIN_EMAIL = data.adminEmail; }).catch(console.error);
-    }, []);
+    
 
 
     if (!dnd) {
@@ -859,15 +857,15 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{t('alerts.ai_defaults_msg')}</p>
                     <div>
                         <label className="block text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">{t('labels.base_url')}</label>
-                        <input className="w-full p-4 bg-gray-50 rounded-xl border border-gray-100 outline-none text-xs font-bold" value={aiConfig.baseUrl} onChange={e => setAiConfig({...aiConfig, baseUrl: e.target.value})} placeholder="https://api.openai.com/v1" />
+                        <input className="w-full p-4 bg-gray-50 rounded-xl border border-gray-100 outline-none text-xs font-bold" value={aiConfig.baseUrl} readOnly placeholder="https://api.openai.com/v1" />
                     </div>
                     <div>
                         <label className="block text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">{t('labels.api_key')}</label>
-                        <input className="w-full p-4 bg-gray-50 rounded-xl border border-gray-100 outline-none text-xs font-bold" type="password" value={aiConfig.apiKey} onChange={e => setAiConfig({...aiConfig, apiKey: e.target.value})} placeholder="sk-..." />
+                        <input className="w-full p-4 bg-gray-50 rounded-xl border border-gray-100 outline-none text-xs font-bold" type="password" value={aiConfig.apiKey} readOnly placeholder="sk-..." />
                     </div>
                     <div>
                         <label className="block text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">{t('labels.model_id')}</label>
-                        <input className="w-full p-4 bg-gray-50 rounded-xl border border-gray-100 outline-none text-xs font-bold" value={aiConfig.model} onChange={e => setAiConfig({...aiConfig, model: e.target.value})} placeholder="gpt-4o" />
+                        <input className="w-full p-4 bg-gray-50 rounded-xl border border-gray-100 outline-none text-xs font-bold" value={aiConfig.model} readOnly placeholder="gpt-4o" />
                     </div>
                 </div>
             </window.GlobalModal>
