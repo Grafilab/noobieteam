@@ -843,16 +843,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
                 )}
             </div>
 
-            <window.GlobalModal isOpen={isAISettingsOpen} onClose={() => setIsAISettingsOpen(false)} title={t('labels.ai_configuration')} footer={
-                <div className="flex gap-4">
-                    <button onClick={() => {
-                        const defaults = { model: 'gemini-3-flash-preview', apiKey: '[REDACTED_API_KEY]', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/' };
-                        setAiConfig(defaults);
-                        showToast(t('alerts.confirm_reset_ai'));
-                    }} className="bg-gray-100 text-gray-500 px-6 py-3 rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-gray-200 transition">{t('actions.reset_defaults')}</button>
-                    <button onClick={() => setIsAISettingsOpen(false)} className="bg-black text-white px-8 py-3 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl">{t('actions.save_and_sync')}</button>
-                </div>
-            }>
+            <window.GlobalModal isOpen={isAISettingsOpen} onClose={() => setIsAISettingsOpen(false)} title={t('labels.ai_configuration')} footer={<button onClick={() => setIsAISettingsOpen(false)} className="bg-black text-white px-8 py-3 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl">{t('actions.close')}</button>}>
                 <div className="space-y-4">
                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{t('alerts.ai_defaults_msg')}</p>
                     <div>

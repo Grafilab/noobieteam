@@ -18,3 +18,7 @@
 - **Date:** 2026-04-23
   **Action:** Hotfix VaultTab input order
   **Outcome:** The Tester flagged that the previous commit did not successfully swap the DOM order of the Vault input fields. Re-applied the fix to `VaultTab.jsx` ensuring that the `URL` input field correctly precedes the `Account Identifier` field in the "Create Secret" form layout, finalizing the Boss's exact UX requirements.
+
+- **Date:** 2026-04-23
+  **Action:** Fixed AI configuration UI read-only regression.
+  **Outcome:** The previous hotfix successfully locked the HTML `<input>` fields to `readOnly` but accidentally left the "Reset Defaults" and "Save & Sync" buttons visible and active in the modal footer. To strictly enforce the Boss's requirement that the chat box settings are purely a display sourced from `.env`, I completely eradicated the two operational buttons and replaced the footer with a single, unified "Close" button.
