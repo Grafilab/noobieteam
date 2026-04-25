@@ -353,7 +353,7 @@ window.DocTab = ({ workspaceId, user }) => {
                                     <div className="pl-6 mt-1 space-y-1">
                                         {folders.filter(sub => sub.parentId === folderId).map(sub => (
                                             <div key={sub.id || sub._id} className="mb-1">
-                                                <div className="flex items-center justify-between p-2 rounded-xl hover:bg-gray-50 cursor-pointer group" onClick={() => toggleFolder(sub.id || sub._id)}>
+                                                <div className={`flex items-center justify-between p-2 rounded-xl cursor-pointer group transition ${selectedFolderId === (sub.id || sub._id) && !selectedDocId ? 'bg-blue-50' : 'hover:bg-gray-50'}`} onClick={() => { toggleFolder(sub.id || sub._id); setSelectedFolderId(sub.id || sub._id); setSelectedDocId(null); setShowMobileSidebar(false); }}>
                                                     <div className="flex items-center gap-2">
                                                         <window.Icon name={expandedFolders[sub.id || sub._id] ? "folder-open" : "folder"} size={14} className="text-gray-300" />
                                                         <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{sub.name}</span>

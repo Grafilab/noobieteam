@@ -32,3 +32,7 @@
 - **Date:** 2026-04-25
   **Action:** Hotfix Folder README active rendering regression.
   **Outcome:** The Tester discovered that the previous update initialized `activeFolder` but failed to correctly inject the React JSX block due to a mismatch in a targeted `replace` string. I patched `DocTab.jsx` to correctly inject the `activeFolder` ternary. Now, clicking a folder bypasses the "No Document Selected" fallback state and seamlessly renders the `window.ModernDocEditor` directly bound to the Mongoose folder's `description` field.
+
+- **Date:** 2026-04-25
+  **Action:** Fixed Nested Subfolder README selection logic.
+  **Outcome:** The Tester noticed that while top-level folders correctly displayed the new "Folder Overview" README, clicking on nested subfolders only toggled their expansion state without rendering their associated description cover pages. I updated the `onClick` handler for subfolders in `DocTab.jsx` to match the top-level logic (`setSelectedFolderId(sub.id || sub._id); setSelectedDocId(null);`), ensuring that nested folder descriptions parsed from Postman are now fully viewable and editable.
