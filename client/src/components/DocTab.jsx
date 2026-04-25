@@ -228,12 +228,12 @@ window.DocTab = ({ workspaceId, user }) => {
                         }
                         else if (req.body?.mode === 'formdata') {
                             const formDataArr = Array.isArray(req.body.formdata) ? req.body.formdata : [];
-                            body = JSON.stringify(formDataArr.reduce((acc, curr) => { if(curr.key) acc[curr.key] = curr.value || ''; return acc; }, {}), null, 2);
+                            body = JSON.stringify(formDataArr.reduce((acc, curr) => { if(curr.key) acc[curr.key] = curr.value !== undefined && curr.value !== null ? curr.value : ''; return acc; }, {}), null, 2);
                             headers.push({ key: 'Content-Type', value: 'multipart/form-data' });
                         }
                         else if (req.body?.mode === 'urlencoded') {
                             const urlEncodedArr = Array.isArray(req.body.urlencoded) ? req.body.urlencoded : [];
-                            body = JSON.stringify(urlEncodedArr.reduce((acc, curr) => { if(curr.key) acc[curr.key] = curr.value || ''; return acc; }, {}), null, 2);
+                            body = JSON.stringify(urlEncodedArr.reduce((acc, curr) => { if(curr.key) acc[curr.key] = curr.value !== undefined && curr.value !== null ? curr.value : ''; return acc; }, {}), null, 2);
                             headers.push({ key: 'Content-Type', value: 'application/x-www-form-urlencoded' });
                         }
                         
