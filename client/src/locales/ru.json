@@ -131,6 +131,8 @@
     "qa_pending": "Ожидает",
     "qa_passed": "Пройдено",
     "qa_failed": "Не пройдено",
+    "progress": "Прогресс",
+    "updated": "Обновлено",
     "project_command_hub": "Командный центр проекта",
     "system_log": "Системный лог",
     "stage_name": "Название этапа:",

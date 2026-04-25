@@ -373,8 +373,17 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         const nextIdx = colIdx + direction;
         if (nextIdx >= 0 && nextIdx < columns.length) {
             const nextColId = columns[nextIdx].id;
-            await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: nextColId, col: nextColId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + nextColId } }) });
-            setCards(prev => prev.map(c => c.id === id ? { ...c, columnId: nextColId, col: nextColId } : c));
+            const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: nextColId, col: nextColId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + nextColId } }) });
+            const updatedTask = await res.json();
+            if (!res.ok) {
+                if (res.status === 409) {
+                    showAlert(t('alerts.overwrite_conflict') || updatedTask.error || "Conflict: This card was modified by another user recently. Please refresh to avoid overwriting their work.", t('alerts.conflict') || "Overwrite Conflict");
+                } else {
+                    showAlert(updatedTask.error || "Failed to update task", "Update Error");
+                }
+                return;
+            }
+            setCards(prev => prev.map(c => c.id === id ? updatedTask : c));
         }
     };
 
@@ -851,7 +860,17 @@ User Request: ${aiInput}` : aiInput;
                                 });
                                 
                                 setCards(newCards);
-                                await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
+                                const res = await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
+                                const updatedTask = await res.json(); 
+                                if (!res.ok) {
+                                    if (res.status === 409) {
+                                        showAlert(t('alerts.overwrite_conflict') || updatedTask.error || "Conflict: This card was modified by another user recently. Please refresh to avoid overwriting their work.", t('alerts.conflict') || "Overwrite Conflict");
+                                    } else {
+                                        showAlert(updatedTask.error || "Failed to update task", "Update Error");
+                                    }
+                                    return;
+                                }
+                                setCards(prev => prev.map(card => card.id === draggableId ? updatedTask : card));
                                 await fetch(`/api/workspaces/${workspace.id || workspace._id}/tasks/bulk-order`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ updates: bulkUpdates }) });
                             }}>
                             <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden h-full w-full">
@@ -937,12 +956,22 @@ User Request: ${aiInput}` : aiInput;
                                             {card.dueDate && <div className="inline-flex items-center gap-2.5 bg-red-50 text-red-500 px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest mb-3 border-2 border-red-100 shadow-lg shadow-red-100"><window.Icon name="calendar" size={14} /> {card.dueDate}</div>}
                                             {card.checklist?.length > 0 && <div className="w-full bg-gray-50 h-1.5 rounded-full overflow-hidden mb-3 border border-gray-100"><div className="bg-emerald-400 h-fit max-h-full transition-all duration-1000" style={{ width: `${(card.checklist.filter(i => i && i.done).length / card.checklist.length) * 100}%` }}></div></div>}
                                             <div className="pt-3 border-t border-gray-50 flex items-center justify-between text-gray-300">
-                                                <div className="flex -space-x-2">
-                                                    {card.assignees?.map(email => {
-                                                        if (!email) return null;
-                                                        const m = getMemberData(email);
-                                                        return <window.Avatar key={email} label={window.getInitials(email)} src={m.avatar} size="sm" active />;
-                                                    })}
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex -space-x-2">
+                                                        {card.assignees?.map(email => {
+                                                            if (!email) return null;
+                                                            const m = getMemberData(email);
+                                                            return <window.Avatar key={email} label={window.getInitials(email)} src={m.avatar} size="sm" active />;
+                                                        })}
+                                                    </div>
+                                                    {card.progress != null && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden border border-gray-100">
+                                                                <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${card.progress}%` }} />
+                                                            </div>
+                                                            <span className="text-[9px] font-black text-emerald-600">{card.progress}%</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <div className="flex gap-2">
                                                     {card.attachments?.length > 0 && <window.Icon name="paperclip" size={14} />}

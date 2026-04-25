@@ -127,6 +127,8 @@
     "qa_pending": "待測試",
     "qa_passed": "通過",
     "qa_failed": "未通過",
+    "progress": "進度",
+    "updated": "已更新",
     "project_command_hub": "項目指揮中心",
     "system_log": "系統日誌",
     "stage_name": "階段名稱：",

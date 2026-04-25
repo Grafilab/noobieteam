@@ -28,7 +28,7 @@ router.post('/workspaces', async (req, res) => {
 
 router.put('/workspaces/:id', async (req, res) => {
   try {
-    const ws = await Workspace.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const ws = await Workspace.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     res.json(ws);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -108,7 +108,9 @@ router.put('/tasks/:id', async (req, res) => {
         }
     }
     
-
+    if (updateData.columnId && updateData.columnId !== String(task.columnId)) {
+        updateData.progress = 0;
+    }
     Object.assign(task, updateData);
 
     if (auditEvent) {
@@ -142,7 +144,7 @@ router.post('/tasks/:taskId/comments', async (req, res) => {
         const task = await Task.findByIdAndUpdate(
             req.params.taskId,
             { $push: { comments: newComment } },
-            { new: true }
+            { returnDocument: 'after' }
         );
         
         res.status(201).json(task);
@@ -156,7 +158,7 @@ router.delete('/tasks/:taskId/comments/:commentId', async (req, res) => {
         const task = await Task.findByIdAndUpdate(
             req.params.taskId,
             { $pull: { comments: { _id: req.params.commentId } } },
-            { new: true }
+            { returnDocument: 'after' }
         );
         res.json(task);
     } catch (e) {
@@ -255,7 +257,7 @@ router.put('/users/pin', async (req, res) => {
         const { email, pin } = req.body;
         if (!email || !pin) return res.status(400).json({ error: 'Email and pin required' });
         const hash = crypto.createHash('sha256').update(pin).digest('hex');
-        let user = await User.findOneAndUpdate({ email }, { vaultPin: hash }, { new: true });
+        let user = await User.findOneAndUpdate({ email }, { vaultPin: hash }, { returnDocument: 'after' });
         if (!user) {
             // If user doesn't exist, seed them now
             user = new User({ email, vaultPin: hash, name: email.split('@')[0], method: 'local', password: 'seed' });
@@ -267,7 +269,7 @@ router.put('/users/pin', async (req, res) => {
 
 router.put('/users/:email', async (req, res) => {
     try {
-      const user = await User.findOneAndUpdate({ email: req.params.email }, req.body, { new: true });
+      const user = await User.findOneAndUpdate({ email: req.params.email }, req.body, { returnDocument: 'after' });
       res.json(user);
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -295,7 +297,7 @@ router.post('/workspaces/:wsId/folders', async (req, res) => {
 
 router.put('/folders/:id', async (req, res) => {
   try {
-    const folder = await Folder.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const folder = await Folder.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     res.json(folder);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -355,7 +357,7 @@ router.put('/docs/bulk-move', async (req, res) => {
 
 router.put('/docs/:id', async (req, res) => {
   try {
-    const doc = await Doc.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const doc = await Doc.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after' });
     res.json(doc);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -440,7 +442,7 @@ router.post('/workspaces/:wsId/vault/decrypt', async (req, res) => {
 // --- Admin ---
 router.post('/admin/users/:email/reset-pin', async (req, res) => {
     try {
-        const user = await User.findOneAndUpdate({ email: req.params.email }, { vaultPin: null }, { new: true });
+        const user = await User.findOneAndUpdate({ email: req.params.email }, { vaultPin: null }, { returnDocument: 'after' });
         res.json({ success: true, user });
     } catch(e) { res.status(500).json({ error: e.message }); }
 });

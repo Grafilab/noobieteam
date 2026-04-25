@@ -87,6 +87,7 @@ const taskSchema = new mongoose.Schema({
     text: String,
     done: { type: Boolean, default: false }
   }],
+  progress: { type: Number, min: 0, max: 100, default: 0 },
   auditTrail: [{ user: String, action: String, timestamp: { type: Date, default: Date.now } }],
 
   comments: [{

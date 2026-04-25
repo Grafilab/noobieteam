@@ -127,6 +127,8 @@
     "qa_pending": "検証待ち",
     "qa_passed": "合格",
     "qa_failed": "不合格",
+    "progress": "進捗",
+    "updated": "更新済み",
     "project_command_hub": "プロジェクトコマンドハブ",
     "system_log": "システムログ",
     "stage_name": "ステージ名：",
