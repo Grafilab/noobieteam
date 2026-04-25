@@ -140,6 +140,8 @@
     "qa_pending": "Pending",
     "qa_passed": "Passed",
     "qa_failed": "Failed",
+    "progress": "Progress",
+    "updated": "Updated",
     "project_command_hub": "Project Command Hub",
     "system_log": "System Log",
     "stage_name": "Stage name:",

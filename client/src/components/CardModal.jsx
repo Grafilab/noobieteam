@@ -24,6 +24,8 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
     });
     const [urgency, setUrgency] = React.useState(card.urgency || 'LOW');
     const [qaStatus, setQaStatus] = React.useState(card.qaStatus || 'NONE');
+    const [progress, setProgress] = React.useState(card.progress != null ? card.progress : 0);
+    const [progressInput, setProgressInput] = React.useState(String(card.progress != null ? card.progress : 0));
     const [epic, setEpic] = React.useState(card.epic || '');
     const [checklist, setChecklist] = React.useState(card.checklist || []);
     const [assignees, setAssignees] = React.useState(card.assignees || []);
@@ -173,7 +175,10 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
         <div className="fixed inset-0 z-[1600] flex items-center justify-center p-4 glass-blur animate-fade-in text-black">
             <div className="bg-white w-[95%] md:w-full max-w-3xl rounded-3xl md:rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden animate-pop flex flex-col max-h-[90vh] md:max-h-[85vh]">
                 <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
-                    <input className="text-2xl font-black focus:outline-none w-full bg-transparent tracking-tighter" value={title} onChange={e => setTitle(e.target.value)} />
+                    <div className="flex flex-col w-full">
+                        <input className="text-2xl font-black focus:outline-none w-full bg-transparent tracking-tighter" value={title} onChange={e => setTitle(e.target.value)} />
+                        {card.updatedAt && <span className="text-[9px] text-gray-400 font-bold mt-0.5">{t('labels.updated')} {new Date(card.updatedAt).toLocaleString()}</span>}
+                    </div>
                     <div className="flex gap-2">
                         <button onClick={() => showConfirm(t('actions.delete_mission'), t('actions.erase_completely'), () => onDelete(card.id))} className="p-3 text-red-400 hover:bg-red-50 rounded-full transition"><window.Icon name="trash-2" size={20} /></button>
                         <button onClick={onClose} className="p-3 hover:bg-gray-100 rounded-full transition"><window.Icon name="x" size={20} /></button>
@@ -199,6 +204,36 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
                                 <button key={st} onClick={() => setQaStatus(st)} className={`flex-1 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition ${qaStatus === st ? qaColors[st] + ' text-white shadow-md' : 'text-gray-400 hover:bg-white'}`}>{t(`labels.qa_${st.toLowerCase()}`)}</button>
                             ))}
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-black text-black uppercase tracking-widest mb-3">{t('labels.progress')}</label>
+                        <div className="relative w-full h-3 bg-gray-100 rounded-full overflow-hidden mb-3">
+                            <div className="absolute left-0 top-0 h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                        </div>
+                        <div className="flex gap-1.5 p-1 bg-gray-50 rounded-2xl border border-gray-100 mb-3">
+                            {[0, 25, 50, 75, 100].map((val) => {
+                                return (
+                                    <button
+                                        key={val}
+                                        onClick={() => { setProgress(val); setProgressInput(String(val)); }}
+                                        className={`flex-1 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition ${progress === val ? 'bg-emerald-500 text-white shadow-md' : 'text-gray-400 hover:bg-white'}`}
+                                    >{val}%</button>
+                                );
+                            })}
+                        </div>
+                        <input
+                            type="number" min="0" max="100"
+                            className="w-full p-4 bg-gray-50 rounded-2xl border border-gray-100 outline-none text-[11px] font-black"
+                            placeholder="Custom value (0–100)"
+                            value={progressInput}
+                            onChange={e => setProgressInput(e.target.value)}
+                            onBlur={() => {
+                                const v = Math.min(100, Math.max(0, Number(progressInput)));
+                                setProgress(isNaN(v) ? 0 : v);
+                                setProgressInput(String(isNaN(v) ? 0 : v));
+                            }}
+                        />
                     </div>
 
                     <div>
@@ -371,7 +406,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
         <button onClick={() => setShowAudit(!showAudit)} className="flex items-center gap-1.5 text-gray-400 hover:text-gray-600 transition text-[10px] font-black uppercase tracking-widest">
             <window.Icon name={showAudit ? "chevron-up" : "chevron-down"} size={14} /> {t('labels.audit_trail')}
         </button>
-        <button onClick={() => onSave({ __v: card.__v, title, content, dueDate, urgency, qaStatus, epic, checklist, assignees, attachments, auditEvent: { user: user?.email || 'System', action: 'Updated card contents' } })} className="bg-blue-500 text-white px-10 py-4 rounded-full text-[10px] font-black uppercase tracking-widest active:scale-95 transition shadow-xl">{t('actions.synchronize')}</button>
+        <button onClick={() => onSave({ __v: card.__v, title, content, dueDate, urgency, qaStatus, epic, checklist, assignees, attachments, progress, auditEvent: { user: user?.email || 'System', action: 'Updated card contents' } })} className="bg-blue-500 text-white px-10 py-4 rounded-full text-[10px] font-black uppercase tracking-widest active:scale-95 transition shadow-xl">{t('actions.synchronize')}</button>
     </div>
 </div>
             </div>

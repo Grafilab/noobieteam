@@ -127,6 +127,8 @@
     "qa_pending": "Menunggu",
     "qa_passed": "Lulus",
     "qa_failed": "Gagal",
+    "progress": "Kemajuan",
+    "updated": "Dikemaskini",
     "project_command_hub": "Pusat Kawalan Projek",
     "system_log": "Log Sistem",
     "stage_name": "Nama peringkat:",
