@@ -339,6 +339,28 @@ router.put('/docs/:id', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+router.delete('/docs/bulk', async (req, res) => {
+  try {
+    const { docIds } = req.body;
+    if (!docIds || !Array.isArray(docIds)) return res.status(400).json({ error: 'docIds array required' });
+    await Doc.deleteMany({ _id: { $in: docIds } });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/docs/bulk-move', async (req, res) => {
+  try {
+    const { docIds, folderId } = req.body;
+    if (!docIds || !Array.isArray(docIds)) return res.status(400).json({ error: 'docIds array required' });
+    await Doc.updateMany({ _id: { $in: docIds } }, folderId ? { $set: { folderId } } : { $unset: { folderId: 1 } });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.delete('/docs/:id', async (req, res) => {
   try {
     await Doc.findByIdAndDelete(req.params.id);
