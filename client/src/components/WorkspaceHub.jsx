@@ -118,7 +118,7 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
             }, [workspaces, viewArchived, isAdmin, user]);
 
             return (
-                <div className="min-h-screen bg-white animate-fade-in relative flex flex-col text-black">
+                <div className="h-screen bg-white animate-fade-in relative flex flex-col text-black">
                 {pinPrompt.isOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 animate-fade-in">
                     <div className="max-w-[320px] w-[95%] mx-auto bg-white p-6 md:p-8 rounded-[2rem] shadow-2xl text-center">
@@ -148,19 +148,19 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                         <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} />
                     </nav>
                     {showUserManagement && <window.UserManagement user={user} adminEmail={adminEmail} onClose={() => setShowUserManagement(false)} />}
-                    <div className="max-w-5xl mx-auto p-4 md:p-10 flex-1">
-                        <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                    <div className="max-w-5xl mx-auto p-4 md:p-10 flex-1 overflow-y-auto">
+                        <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-center gap-4">
                             <div>
                                 <h2 className="text-3xl md:text-5xl font-black tracking-tighter">{viewArchived ? t('actions.archive_workspace') : t('labels.workspace') + 's'}</h2>
                                 <p className="text-gray-400 mt-2 font-bold uppercase tracking-[0.2em] text-[10px]">{t('labels.project_command_hub') || "Project Command Hub"}</p>
                             </div>
-                            <div className="flex gap-4">
+                            <div className="flex items-center gap-3">
                                 {isAdmin && (
-                                    <button onClick={() => setViewArchived(!viewArchived)} className={`p-4 rounded-full transition shadow-xl ${viewArchived ? 'bg-black text-white' : 'bg-white text-gray-400 border border-gray-100'}`}>
-                                        <window.Icon name={viewArchived ? "layout" : "archive"} size={24} />
+                                    <button onClick={() => setViewArchived(!viewArchived)} className={`w-9 h-9 flex items-center justify-center rounded-xl transition ${viewArchived ? 'bg-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                                        <window.Icon name={viewArchived ? "layout" : "archive"} size={16} />
                                     </button>
                                 )}
-                                {!viewArchived && <button onClick={addWS} className="p-4 bg-black text-white rounded-full hover:scale-110 active:scale-90 transition shadow-xl ml-6"><window.Icon name="plus" size={24} /></button>}
+                                {!viewArchived && <button onClick={addWS} className="w-14 h-14 flex items-center justify-center bg-black text-white rounded-full shadow-xl hover:scale-110 active:scale-90 transition"><window.Icon name="plus" size={22} /></button>}
                             </div>
                         </header>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
