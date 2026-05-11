@@ -458,9 +458,9 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                         </select>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                                <div className="flex items-center gap-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl w-full overflow-hidden max-w-full">
                                     <span className={`font-black px-3 py-1 rounded-lg text-xs ${activeDoc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : activeDoc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : activeDoc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{activeDoc.apiSpec?.method}</span>
-                                    <code className="text-sm font-bold text-gray-800">{displayUrl || 'No URL specified'}</code>
+                                    <code className="text-sm font-bold text-gray-800 break-all">{displayUrl || 'No URL specified'}</code>
                                 </div>
                                 {activeDoc.content && (
                                     <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{__html: activeDoc.content}}></div>
@@ -468,11 +468,11 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                 {activeDoc.apiSpec?.headers?.length > 0 && (
                                     <div>
                                         <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 mb-4">Headers</h3>
-                                        <table className="w-full text-left text-sm border-collapse">
+                                        <table className="w-full text-left text-sm border-collapse table-fixed">
                                             <thead><tr className="border-b-2 border-gray-100"><th className="pb-2 font-bold w-1/3">Key</th><th className="pb-2 font-bold">Value</th></tr></thead>
                                             <tbody>
                                                 {activeDoc.apiSpec.headers.map((h, i) => (
-                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{h.key}</td><td className="py-3 font-mono text-gray-800">{h.value}</td></tr>
+                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{h.key}</td><td className="py-3 font-mono text-gray-800 break-all whitespace-normal min-w-0">{h.value}</td></tr>
                                                 ))}
                                             </tbody>
                                         </table>
@@ -481,11 +481,11 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                 {activeDoc.apiSpec?.queryParams?.length > 0 && (
                                     <div>
                                         <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 mb-4">Query Parameters</h3>
-                                        <table className="w-full text-left text-sm border-collapse">
+                                        <table className="w-full text-left text-sm border-collapse table-fixed">
                                             <thead><tr className="border-b-2 border-gray-100"><th className="pb-2 font-bold w-1/3">Key</th><th className="pb-2 font-bold">Value</th></tr></thead>
                                             <tbody>
                                                 {activeDoc.apiSpec.queryParams.map((q, i) => (
-                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{q.key}</td><td className="py-3 font-mono text-gray-800">{q.value}</td></tr>
+                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{q.key}</td><td className="py-3 font-mono text-gray-800 break-all whitespace-normal min-w-0">{q.value}</td></tr>
                                                 ))}
                                             </tbody>
                                         </table>

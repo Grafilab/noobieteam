@@ -651,7 +651,7 @@ window.DocTab = ({ workspaceId, user }) => {
                                     }
                                 }
                                 return (<div className="max-w-6xl mx-auto flex flex-col gap-6">{/* API Endpoint Config */}
-                                    <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-gray-100 flex items-center gap-4">
+                                    <div className="bg-white p-6 rounded-[2rem] shadow-lg border border-gray-100 flex items-center gap-4 w-full overflow-hidden max-w-full">
                                         {docEnvs.length > 0 && (
                                             <select 
                                                 className="bg-purple-50 text-purple-700 font-bold text-xs px-4 py-3 rounded-xl border border-purple-100 outline-none cursor-pointer"

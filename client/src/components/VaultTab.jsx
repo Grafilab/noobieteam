@@ -1,4 +1,6 @@
 window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
+
+    
     const { showPrompt, showAlert, showConfirm } = window.useModals();
     const { showToast } = window.useToasts();
     const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
@@ -72,10 +74,32 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             const s = secrets.find(x => (x.id === revealPrompt.id || x._id === revealPrompt.id));
             const CryptoJS = window.CryptoJS;
             if (!CryptoJS) throw new Error('CryptoJS library not loaded');
-            const bytes = CryptoJS.AES.decrypt(s.value, revealPrompt.pass);
-            const decryptedData = bytes.toString(CryptoJS.enc.Utf8);
+            let bytes;
+            try {
+                bytes = CryptoJS.AES.decrypt(s.value, revealPrompt.pass);
+            } catch (e) {
+                throw new Error(t('alerts.credentials_mismatch') || 'Invalid PIN or Malformed Data');
+            }
+            let decryptedData;
+            try {
+                decryptedData = bytes.toString(CryptoJS.enc.Utf8);
+            } catch (e) {
+                // If Utf8 fails, try legacy Latin1 or Base64 decoding, or just throw mismatch
+                try {
+                    decryptedData = bytes.toString(CryptoJS.enc.Latin1);
+                } catch (e2) {
+                    throw new Error(t('alerts.credentials_mismatch') || 'Invalid PIN or Malformed Data');
+                }
+            }
             if (!decryptedData) throw new Error(t('alerts.credentials_mismatch'));
-            setRevealData(JSON.parse(decryptedData));
+            let parsedData;
+            try {
+                parsedData = JSON.parse(decryptedData);
+            } catch (e) {
+                // Handle legacy format or unquoted strings if JSON.parse fails but decryption was somewhat successful
+                parsedData = decryptedData;
+            }
+            setRevealData(parsedData);
             setRevealPrompt({ isOpen: false, id: null, pass: '' });
             showToast(t('alerts.decryption_successful'));
         } catch (err) {
