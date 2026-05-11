@@ -15,6 +15,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             const CryptoJS = window.CryptoJS;
             if (!CryptoJS) throw new Error('CryptoJS library not loaded');
             const pass = user?.vaultPin || user?.password;
+            if (!pass) throw new Error("No Master PIN configured");
             const encrypted = CryptoJS.AES.encrypt(JSON.stringify(newSecret), pass).toString();
             
             const updatedSecrets = secrets.concat([{ id: window.generateId('sec'), service: newSecret.service, url: newSecret.url, value: encrypted }]);
@@ -76,7 +77,17 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             if (!CryptoJS) throw new Error('CryptoJS library not loaded');
             let bytes;
             try {
-                bytes = CryptoJS.AES.decrypt(s.value, revealPrompt.pass);
+                // Hashing the input to match the user.vaultPin hash used during encryption
+                const hashedPass = CryptoJS.SHA256(revealPrompt.pass).toString();
+                bytes = CryptoJS.AES.decrypt(s.value, hashedPass);
+                
+                // Integrity check: if UTF-8 conversion fails or is empty, try raw PIN (legacy support)
+                let test;
+                try { test = bytes.toString(CryptoJS.enc.Utf8); } catch(e) {}
+                
+                if (!test) {
+                    bytes = CryptoJS.AES.decrypt(s.value, revealPrompt.pass);
+                }
             } catch (e) {
                 throw new Error(t('alerts.credentials_mismatch') || 'Invalid PIN or Malformed Data');
             }

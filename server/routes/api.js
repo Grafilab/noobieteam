@@ -431,29 +431,7 @@ router.post('/workspaces/:wsId/vault/encrypt', async (req, res) => {
     }
 });
 
-router.post('/workspaces/:wsId/vault/decrypt', async (req, res) => {
-    try {
-        const { cipherBase64, password } = req.body;
-        if (!cipherBase64 || !password) return res.status(400).json({ error: 'Missing payload' });
-        
-        let safePassword = String(password);
-        if (safePassword.length < 64) {
-            safePassword = crypto.createHash('sha256').update(safePassword).digest('hex');
-        }
-        const payload = JSON.parse(Buffer.from(cipherBase64, 'base64').toString('utf8'));
-        const key = crypto.scryptSync(safePassword, 'salt', 32);
-        
-        const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(payload.iv, 'hex'));
-        decipher.setAuthTag(Buffer.from(payload.authTag, 'hex'));
-        
-        let decrypted = decipher.update(payload.encryptedData, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        
-        res.json({ decrypted });
-    } catch (e) {
-        res.status(401).json({ error: 'Incorrect password. Unable to decrypt secret.' });
-    }
-});
+// Vault Decrypt Route removed as encryption is strictly local now.
 
 // --- Admin ---
 router.post('/admin/users/:email/reset-pin', async (req, res) => {
