@@ -283,9 +283,41 @@ router.put('/users/pin', async (req, res) => {
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+router.put('/users/:email/password', async (req, res) => {
+    try {
+      const { currentPassword, password } = req.body;
+      if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
+      if (!password || password.length < 4) return res.status(400).json({ error: 'Password must be at least 4 characters' });
+      const bcrypt = require('bcrypt');
+      const existingUser = await User.findOne({ email: req.params.email });
+      if (!existingUser) return res.status(404).json({ error: 'User not found' });
+
+      let isMatch = existingUser.password === currentPassword;
+      if (!isMatch) {
+        try {
+          isMatch = await bcrypt.compare(currentPassword, existingUser.password);
+        } catch (err) {
+          // Non-bcrypt legacy password; direct match already failed.
+        }
+      }
+      if (!isMatch) return res.status(401).json({ error: 'Current password is incorrect' });
+
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      await User.findOneAndUpdate(
+        { email: existingUser.email },
+        { password: hashedPassword, method: 'local' },
+        { new: true }
+      );
+      res.json({ success: true });
+    } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.put('/users/:email', async (req, res) => {
     try {
-      const user = await User.findOneAndUpdate({ email: req.params.email }, req.body, { new: true });
+      const { password, vaultPin, email, ...safeBody } = req.body;
+      const user = await User.findOneAndUpdate({ email: req.params.email }, safeBody, { new: true });
+      if (!user) return res.status(404).json({ error: 'User not found' });
       res.json(user);
     } catch(e) { res.status(500).json({ error: e.message }); }
 });
