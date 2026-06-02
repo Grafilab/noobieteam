@@ -162,6 +162,16 @@ const Workspace = mongoose.model('Workspace', workspaceSchema);
 const Task = mongoose.model('Task', taskSchema);
 
 
+const workspaceActivitySchema = new mongoose.Schema({
+  workspaceId: { type: String, required: true },
+  user: { type: String, required: true },
+  action: { type: String, required: true },
+  resourceType: { type: String, enum: ['card', 'stage', 'vault', 'doc', 'folder', 'api'], required: true },
+  resourceName: { type: String },
+}, { timestamps: true });
+workspaceActivitySchema.set('toJSON', { virtuals: true });
+const WorkspaceActivity = mongoose.model('WorkspaceActivity', workspaceActivitySchema);
+
 const emojiEventSchema = new mongoose.Schema({
   workspaceId: { type: String, required: true },
   senderEmail: { type: String, required: true },
@@ -171,4 +181,4 @@ const emojiEventSchema = new mongoose.Schema({
 emojiEventSchema.set('toJSON', { virtuals: true });
 const EmojiEvent = mongoose.model('EmojiEvent', emojiEventSchema);
 
-module.exports = { connectDB, User, Workspace, Task, Doc, Folder, Env, EmojiEvent };
+module.exports = { connectDB, User, Workspace, Task, Doc, Folder, Env, EmojiEvent, WorkspaceActivity };
