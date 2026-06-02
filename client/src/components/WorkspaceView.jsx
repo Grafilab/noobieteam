@@ -1274,7 +1274,7 @@ User Request: ${aiInput}` : aiInput;
                     </div>
                     </dnd.DragDropContext>
                 </main>
-            ) : tab === 'vault' ? <window.VaultTab workspace={workspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} /> : null}
+            ) : tab === 'vault' ? <window.VaultTab workspace={workspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} workspace={workspace} /> : null}
             {editingCard && <window.CardModal card={editingCard} user={user} members={members} allUsers={allUsers} socket={socketRef.current} workspaceId={workspace.id || workspace._id} cardUrl={`${window.location.origin}${buildCardPath(workspace, editingCard.id || editingCard._id)}`} onClose={() => { setEditingCard(null); clearCardUrl(); }} onSave={async (upd) => { 
                 const cardId = editingCard.id || editingCard._id; 
                 const res = await fetch(`/api/tasks/${cardId}`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(upd) }); 

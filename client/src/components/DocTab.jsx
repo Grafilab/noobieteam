@@ -65,7 +65,17 @@ window.ModernDocEditor = ({ initialContent, editable, onChange }) => {
     );
 };
 
-window.DocTab = ({ workspaceId, user }) => {
+window.DocTab = ({ workspaceId, user, workspace }) => {
+    const isOwnerOrAdmin = React.useMemo(() => {
+        if (!user?.email) return false;
+        const adminEmail = window.NT_ADMIN_EMAIL || 'admin@noobieteam.ai';
+        if (user.email === adminEmail) return true;
+        const members = workspace?.members || [];
+        return members.some(m => {
+            if (typeof m === 'string') return m === user.email; // legacy: string array implies owner
+            return m?.userId === user.email && m?.role === 'OWNER';
+        });
+    }, [user?.email, workspace]);
     const [apiTab, setApiTab] = React.useState('Body');
     const [apiResponse, setApiResponse] = React.useState(null);
     const [isApiLoading, setIsApiLoading] = React.useState(false);
@@ -404,6 +414,48 @@ window.DocTab = ({ workspaceId, user }) => {
         setSelectedDocIds(new Set());
         setShowBulkMoveDropdown(false);
         showToast(t('alerts.docs_moved', { count: arr.length }));
+    };
+
+    const setFolderPassword = (folder) => {
+        const fid = folder.id || folder._id;
+        showPrompt(
+            folder.isPasswordProtected ? 'Update Docs Password' : 'Set Docs Password',
+            'Enter a password (min 4 chars). Anyone visiting the public docs link will be prompted for this.',
+            async (password) => {
+                if (!password) return;
+                const res = await fetch(`/api/folders/${fid}/password`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'user-email': user?.email || '' },
+                    body: JSON.stringify({ password })
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    showAlert(err.error || 'Failed to set password.');
+                    return;
+                }
+                setFolders(prev => prev.map(f => (f.id === fid || f._id === fid) ? { ...f, isPasswordProtected: true } : f));
+                showToast('Docs password updated.');
+            },
+            true
+        );
+    };
+
+    const removeFolderPassword = (folder) => {
+        const fid = folder.id || folder._id;
+        showConfirm('Remove Docs Password', 'Anyone with the public link will be able to view this documentation. Continue?', async () => {
+            const res = await fetch(`/api/folders/${fid}/password`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'user-email': user?.email || '' },
+                body: JSON.stringify({ password: null })
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                showAlert(err.error || 'Failed to remove password.');
+                return;
+            }
+            setFolders(prev => prev.map(f => (f.id === fid || f._id === fid) ? { ...f, isPasswordProtected: false } : f));
+            showToast('Docs password removed.');
+        });
     };
 
     const deleteDoc = async (id) => {
@@ -783,6 +835,39 @@ window.DocTab = ({ workspaceId, user }) => {
                                 </div>
                                 
                                 
+                                {!activeFolder.parentId && (
+                                <div className="mb-8 bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <window.Icon name={activeFolder.isPasswordProtected ? 'lock' : 'unlock'} size={16} className={activeFolder.isPasswordProtected ? 'text-amber-500' : 'text-gray-400'} />
+                                            <h3 className="text-sm font-black uppercase tracking-widest text-gray-500">Public Link Password</h3>
+                                            {activeFolder.isPasswordProtected && (
+                                                <span className="text-[9px] font-black bg-amber-100 text-amber-700 px-2 py-0.5 rounded uppercase tracking-widest">Protected</span>
+                                            )}
+                                        </div>
+                                        {isOwnerOrAdmin ? (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setFolderPassword(activeFolder)} className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-100 transition border border-blue-100">
+                                                    {activeFolder.isPasswordProtected ? 'Update Password' : 'Set Password'}
+                                                </button>
+                                                {activeFolder.isPasswordProtected && (
+                                                    <button onClick={() => removeFolderPassword(activeFolder)} className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 transition border border-red-100">
+                                                        Remove
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <span className="text-[10px] font-bold text-gray-400 italic">Owner or admin only</span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-gray-500 leading-relaxed">
+                                        {activeFolder.isPasswordProtected
+                                            ? 'Visitors to the public docs link must enter this password before viewing.'
+                                            : 'The public docs link is currently open — anyone with the URL can view it.'}
+                                    </p>
+                                </div>
+                                )}
+
                                 {!activeFolder.parentId && (
                                 <div className="mb-8 bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm">
                                     <h3 className="text-sm font-black uppercase tracking-widest text-gray-500 mb-4">{t('labels.environments')}</h3>

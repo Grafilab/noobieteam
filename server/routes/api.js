@@ -4,6 +4,21 @@ const express = require('express');
 const router = express.Router();
 const { User, Workspace, Task, Doc, Folder, Env, EmojiEvent } = require('../db');
 
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@noobieteam.ai';
+
+// Returns true if the given email is the ADMIN_EMAIL or an OWNER member of the workspace.
+async function isOwnerOrAdmin(workspaceId, email) {
+  if (!email) return false;
+  if (email === ADMIN_EMAIL) return true;
+  const ws = await Workspace.findById(workspaceId);
+  if (!ws) return false;
+  return (ws.members || []).some(m => {
+    const memberId = typeof m === 'string' ? m : m?.userId;
+    const role = typeof m === 'string' ? 'OWNER' : m?.role;
+    return memberId === email && role === 'OWNER';
+  });
+}
+
 // --- Workspaces ---
 router.get('/workspaces', async (req, res) => {
   try {
@@ -345,7 +360,8 @@ router.post('/workspaces/:wsId/folders', async (req, res) => {
 
 router.put('/folders/:id', async (req, res) => {
   try {
-    const folder = await Folder.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const { passwordHash, isPasswordProtected, ...safeBody } = req.body || {};
+    const folder = await Folder.findByIdAndUpdate(req.params.id, safeBody, { new: true });
     res.json(folder);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -357,6 +373,38 @@ router.delete('/folders/:id', async (req, res) => {
     await Folder.findByIdAndDelete(req.params.id);
     await Doc.updateMany({ folderId: req.params.id }, { $unset: { folderId: 1 } });
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Set or clear the public-access password for a folder. Only the workspace OWNER
+// or the configured ADMIN_EMAIL may update it. Sending `password: null` (or empty
+// string) removes password protection entirely.
+router.put('/folders/:id/password', async (req, res) => {
+  try {
+    const userEmail = req.headers['user-email'];
+    if (!userEmail) return res.status(401).json({ error: 'Authentication required' });
+    const folder = await Folder.findById(req.params.id);
+    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    const allowed = await isOwnerOrAdmin(folder.workspaceId, userEmail);
+    if (!allowed) return res.status(403).json({ error: 'Only the workspace owner or admin can change the docs password.' });
+
+    const { password } = req.body || {};
+    if (password === null || password === undefined || password === '') {
+      folder.passwordHash = undefined;
+      folder.isPasswordProtected = false;
+    } else {
+      if (typeof password !== 'string' || password.length < 4) {
+        return res.status(400).json({ error: 'Password must be at least 4 characters.' });
+      }
+      const bcrypt = require('bcrypt');
+      const salt = await bcrypt.genSalt(10);
+      folder.passwordHash = await bcrypt.hash(password, salt);
+      folder.isPasswordProtected = true;
+    }
+    await folder.save();
+    res.json({ success: true, isPasswordProtected: folder.isPasswordProtected });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -475,45 +523,80 @@ router.post('/admin/users/:email/reset-pin', async (req, res) => {
 
 
 // --- Public Docs ---
+
+// Resolves a (workspace, folder) from the path params, with the folder loaded
+// including its passwordHash (which is normally excluded from queries).
+async function resolvePublicFolder(wsIdParam, folderSlugParam) {
+  const mongoose = require('mongoose');
+  let wsQuery = [{ name: wsIdParam }];
+  if (mongoose.Types.ObjectId.isValid(wsIdParam) && String(wsIdParam).length === 24) {
+    wsQuery.push({ _id: wsIdParam });
+  }
+  const workspace = await Workspace.findOne({ $or: wsQuery });
+  if (!workspace) return { error: { status: 404, message: 'Workspace not found' } };
+
+  const folderQuery = [{ slug: folderSlugParam }];
+  if (mongoose.Types.ObjectId.isValid(folderSlugParam) && String(folderSlugParam).length === 24) {
+    folderQuery.push({ _id: folderSlugParam });
+  }
+  const folder = await Folder.findOne({ $or: folderQuery, workspaceId: workspace._id.toString() })
+    .select('+passwordHash');
+  if (!folder) return { error: { status: 404, message: 'Folder not found' } };
+  return { workspace, folder };
+}
+
+async function buildPublicPayload(workspace, folder) {
+  const subfolders = await Folder.find({ workspaceId: workspace._id.toString(), parentId: folder._id.toString() });
+  const subfolderIds = subfolders.map(f => f._id.toString());
+  const docs = await Doc.find({
+    workspaceId: workspace._id.toString(),
+    folderId: { $in: [folder._id.toString(), ...subfolderIds] }
+  }).sort({ order: 1, createdAt: 1 });
+  return {
+    workspace: { id: workspace._id, name: workspace.name },
+    folder: { id: folder._id, name: folder.name, slug: folder.slug, description: folder.description, environments: folder.environments },
+    subfolders: subfolders.map(f => ({ id: f._id, name: f.name, parentId: f.parentId, description: f.description, environments: f.environments })),
+    docs
+  };
+}
+
 router.get('/public/docs/:wsId/:folderSlug', async (req, res) => {
   try {
-    const mongoose = require('mongoose');
-    let wsQuery = [];
-    if (mongoose.Types.ObjectId.isValid(req.params.wsId) && String(req.params.wsId).length === 24) {
-        wsQuery.push({ _id: req.params.wsId });
+    const { workspace, folder, error } = await resolvePublicFolder(req.params.wsId, req.params.folderSlug);
+    if (error) return res.status(error.status).json({ error: error.message });
+
+    if (folder.isPasswordProtected) {
+      return res.json({
+        passwordRequired: true,
+        workspace: { id: workspace._id, name: workspace.name },
+        folder: { id: folder._id, name: folder.name, slug: folder.slug }
+      });
     }
-    // We don't have slug on workspace yet, but let's assume wsId is always ID for now or we match by name if we add slug.
-    // If it's an ID, we use _id. If not, maybe we just fallback to name? Or return 404.
-    let finalWsQuery = { name: req.params.wsId };
-    if (wsQuery.length) {
-        finalWsQuery = { $or: [{ name: req.params.wsId }, ...wsQuery] };
+
+    res.json(await buildPublicPayload(workspace, folder));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/public/docs/:wsId/:folderSlug/verify', async (req, res) => {
+  try {
+    const { workspace, folder, error } = await resolvePublicFolder(req.params.wsId, req.params.folderSlug);
+    if (error) return res.status(error.status).json({ error: error.message });
+
+    if (!folder.isPasswordProtected) {
+      // Nothing to verify — just return the docs.
+      return res.json(await buildPublicPayload(workspace, folder));
     }
-    const workspace = await Workspace.findOne(finalWsQuery);
-    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
-    
-    // Find folder by slug or ID
-    const slug = req.params.folderSlug;
-    const query = [{ slug }];
-    if (mongoose.Types.ObjectId.isValid(slug) && String(slug).length === 24) {
-        query.push({ _id: slug });
+    const { password } = req.body || {};
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Password required' });
     }
-    
-    const folder = await Folder.findOne({ $or: query, workspaceId: workspace._id.toString() });
-    if (!folder) return res.status(404).json({ error: 'Folder not found' });
-    
-    // Support 1-level deep subfolders
-    const subfolders = await Folder.find({ workspaceId: workspace._id.toString(), parentId: folder._id.toString() });
-    const subfolderIds = subfolders.map(f => f._id.toString());
-    
-    // Fetch docs in root folder AND subfolders
-    const docs = await Doc.find({ workspaceId: workspace._id.toString(), folderId: { $in: [folder._id.toString(), ...subfolderIds] } }).sort({ order: 1, createdAt: 1 });
-    
-    res.json({ 
-        workspace: { id: workspace._id, name: workspace.name }, 
-        folder: { id: folder._id, name: folder.name, slug: folder.slug, description: folder.description, environments: folder.environments }, 
-        subfolders: subfolders.map(f => ({ id: f._id, name: f.name, parentId: f.parentId, description: f.description, environments: f.environments })),
-        docs 
-    });
+    const bcrypt = require('bcrypt');
+    const match = folder.passwordHash && await bcrypt.compare(password, folder.passwordHash);
+    if (!match) return res.status(401).json({ error: 'Incorrect password' });
+
+    res.json(await buildPublicPayload(workspace, folder));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
