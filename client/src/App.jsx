@@ -227,6 +227,7 @@ const React = window.React;
 
 window.PublicDocsView = ({ wsPath, folderName }) => {
     const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
+    const { showToast } = window.useToasts ? window.useToasts() : { showToast: () => {} };
     const [docs, setDocs] = React.useState([]);
     const [folder, setFolder] = React.useState(null);
     const [subfolders, setSubfolders] = React.useState([]);
@@ -240,6 +241,10 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
     const [showTestPanel, setShowTestPanel] = React.useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = React.useState(false);
     const [activeEnvId, setActiveEnvId] = React.useState('');
+    const [unlockedDocs, setUnlockedDocs] = React.useState({});
+    const [passwordInput, setPasswordInput] = React.useState('');
+    const [unlockError, setUnlockError] = React.useState(null);
+    const [unlocking, setUnlocking] = React.useState(false);
     
     
     const handleTestApi = async (spec, activeDocFolderId) => {
@@ -325,16 +330,65 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                 if (data.folder) {
                     setSelectedFolderId(data.folder.id || data.folder._id);
                 }
+                // Deep link support: /docs/:ws/:folder?doc=<id> opens straight to a document.
+                const params = new URLSearchParams(window.location.search);
+                const deepDocId = params.get('doc');
+                if (deepDocId && (data.docs || []).some(d => (d.id === deepDocId || d._id === deepDocId))) {
+                    setSelectedDocId(deepDocId);
+                    const sub = (data.subfolders || []).find(f => (data.docs || []).some(d => d.folderId === (f.id || f._id) && (d.id === deepDocId || d._id === deepDocId)));
+                    if (sub) setExpandedFolders(prev => ({ ...prev, [sub.id || sub._id]: true }));
+                }
             })
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
     }, [wsPath, folderName]);
 
+    const handleUnlockDoc = async (docId) => {
+        setUnlocking(true);
+        setUnlockError(null);
+        try {
+            const res = await fetch(`/api/public/docs/${wsPath}/unlock`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ docId, password: passwordInput })
+            });
+            if (res.status === 401) { setUnlockError(t('alerts.incorrect_password') || 'Incorrect password. Please try again.'); return; }
+            if (!res.ok) throw new Error('Unable to unlock document.');
+            const data = await res.json();
+            setUnlockedDocs(prev => ({ ...prev, [docId]: { content: data.content, apiSpec: data.apiSpec } }));
+            setPasswordInput('');
+        } catch (err) {
+            setUnlockError(err.message);
+        } finally {
+            setUnlocking(false);
+        }
+    };
+
+    const copyShareLink = async (link) => {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(link);
+            } else {
+                const input = document.createElement('textarea');
+                input.value = link; input.setAttribute('readonly', '');
+                input.style.position = 'fixed'; input.style.opacity = '0';
+                document.body.appendChild(input); input.select();
+                document.execCommand('copy'); document.body.removeChild(input);
+            }
+            showToast(t('alerts.copied_to_clipboard') || 'Copied to clipboard!');
+        } catch (e) { showToast(t('alerts.copy_failed') || 'Unable to copy link.'); }
+    };
+
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500 font-bold">Loading API Documentation...</div>;
     if (error) return <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-500 font-black">{error}</div>;
 
-    const activeDoc = selectedDocId ? docs.find(d => (d.id === selectedDocId || d._id === selectedDocId)) : null;
+    const rawActiveDoc = selectedDocId ? docs.find(d => (d.id === selectedDocId || d._id === selectedDocId)) : null;
+    const activeDocId = rawActiveDoc ? (rawActiveDoc.id || rawActiveDoc._id) : null;
+    const isDocLocked = rawActiveDoc && rawActiveDoc.passwordProtected && !unlockedDocs[activeDocId];
+    // Merge any unlocked content over the masked doc returned by the public API.
+    const activeDoc = rawActiveDoc && unlockedDocs[activeDocId] ? { ...rawActiveDoc, ...unlockedDocs[activeDocId] } : rawActiveDoc;
     const activeFolder = selectedFolderId && !selectedDocId ? (folder?.id === selectedFolderId || folder?._id === selectedFolderId ? folder : subfolders.find(f => (f.id === selectedFolderId || f._id === selectedFolderId))) : null;
+    const isHome = activeFolder && (activeFolder.id === (folder?.id || folder?._id) || activeFolder._id === (folder?.id || folder?._id));
 
     return (
         <div className="min-h-screen bg-white flex text-black font-sans">
@@ -358,8 +412,8 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                     <div className="mb-2">
                         <div className={`flex items-center justify-between p-2 rounded-xl cursor-pointer group transition ${selectedFolderId === (folder?.id || folder?._id) && !selectedDocId ? 'bg-blue-50' : 'hover:bg-gray-100'}`} onClick={() => { setSelectedFolderId(folder?.id || folder?._id); setSelectedDocId(null); setShowMobileSidebar(false); }}>
                             <div className="flex items-center gap-2">
-                                <window.Icon name="folder" size={16} className="text-gray-400" />
-                                <span className="text-xs font-black text-gray-700">{folder?.name}</span>
+                                <window.Icon name="home" size={16} className={selectedFolderId === (folder?.id || folder?._id) && !selectedDocId ? 'text-blue-500' : 'text-gray-400'} />
+                                <span className="text-xs font-black text-gray-700">{folder?.name} · {t('labels.home') || 'Home'}</span>
                             </div>
                         </div>
                         <div className="pl-6 mt-1 space-y-1">
@@ -380,6 +434,7 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                                         <div className="flex items-center gap-2 truncate">
                                                             <window.Icon name={doc.type === 'API' ? "zap" : "file-text"} size={14} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                                             <span className="text-[11px] truncate">{doc.title || t('labels.untitled')}</span>
+                                                            {doc.passwordProtected && <window.Icon name="lock" size={11} className="text-gray-400 flex-shrink-0" />}
                                                         </div>
                                                     </div>
                                                 );
@@ -398,6 +453,7 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                             <window.Icon name="file-text" size={16} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                         )}
                                         <span className="text-sm truncate">{doc.title || t('labels.untitled')}</span>
+                                        {doc.passwordProtected && <window.Icon name="lock" size={12} className="text-gray-400 flex-shrink-0 ml-auto" />}
                                     </div>
                                 );
                             })}
@@ -412,10 +468,48 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                     <button onClick={() => setShowMobileSidebar(true)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
                         <window.Icon name="menu" size={20} />
                     </button>
-                    <h2 className="text-lg font-black tracking-tight">{activeDoc ? activeDoc.title : activeFolder ? activeFolder.name : 'Select a document'}</h2>
+                    <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
+                        {isHome && <window.Icon name="home" size={18} className="text-blue-500" />}
+                        {rawActiveDoc && rawActiveDoc.passwordProtected && <window.Icon name="lock" size={16} className="text-gray-400" />}
+                        {activeDoc ? activeDoc.title : isHome ? (t('labels.home') || 'Home') : activeFolder ? activeFolder.name : 'Select a document'}
+                    </h2>
+                    <button
+                        onClick={() => {
+                            const base = `${window.location.origin}/docs/${wsPath}/${folderName}`;
+                            copyShareLink(rawActiveDoc ? `${base}?doc=${activeDocId}` : base);
+                        }}
+                        className="ml-auto flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition text-[10px] font-black uppercase tracking-widest"
+                        title={t('actions.copy_link') || 'Copy Link'}
+                    >
+                        <window.Icon name="link" size={16} /> <span className="hidden md:inline">{t('actions.copy_link') || 'Copy Link'}</span>
+                    </button>
                 </header>
                 <div className="flex-1 overflow-y-auto p-4 md:p-10 bg-white">
-                    {activeDoc ? (
+                    {isDocLocked ? (
+                        <div className="max-w-md mx-auto mt-10 md:mt-20 animate-fade-in">
+                            <div className="bg-gray-50 border border-gray-200 rounded-[2rem] p-8 md:p-10 text-center shadow-sm">
+                                <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-blue-50 flex items-center justify-center">
+                                    <window.Icon name="lock" size={28} className="text-blue-500" />
+                                </div>
+                                <h3 className="text-xl font-black tracking-tight mb-2">{t('labels.protected_document') || 'Protected Document'}</h3>
+                                <p className="text-sm text-gray-500 mb-6 font-medium">{t('labels.enter_password_to_view') || 'Enter the password to view this document.'}</p>
+                                <form onSubmit={e => { e.preventDefault(); handleUnlockDoc(activeDocId); }} className="space-y-4">
+                                    <input
+                                        autoFocus
+                                        type="password"
+                                        value={passwordInput}
+                                        onChange={e => { setPasswordInput(e.target.value); setUnlockError(null); }}
+                                        placeholder={t('labels.password') || 'Password'}
+                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-1 focus:ring-blue-400 text-center"
+                                    />
+                                    {unlockError && <p className="text-xs font-bold text-red-500">{unlockError}</p>}
+                                    <button type="submit" disabled={unlocking || !passwordInput} className="w-full py-3 bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-100 active:scale-95 transition disabled:opacity-50">
+                                        {unlocking ? (t('actions.sending') || 'Unlocking...') : (t('actions.unlock') || 'Unlock')}
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    ) : activeDoc ? (
                         activeDoc.type === 'API' ? (
                             <div className="max-w-4xl mx-auto animate-fade-in">
                             {(() => {
@@ -525,6 +619,22 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                         ) : (
                             <div className="max-w-4xl mx-auto">
                                 <div className="ql-editor prose max-w-none" dangerouslySetInnerHTML={{__html: activeDoc.content}}></div>
+                            </div>
+                        )
+                    ) : activeFolder ? (
+                        (activeFolder.description && activeFolder.description.replace(/<(.|\n)*?>/g, '').trim()) ? (
+                            <div className="max-w-4xl mx-auto animate-fade-in">
+                                {isHome && (
+                                    <div className="mb-8">
+                                        <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-1">{t('labels.home') || 'Home'}</p>
+                                        <h1 className="text-3xl font-black tracking-tighter">{activeFolder.name}</h1>
+                                    </div>
+                                )}
+                                <div className="ql-editor prose max-w-none" dangerouslySetInnerHTML={{__html: activeFolder.description}}></div>
+                            </div>
+                        ) : (
+                            <div className="text-center py-20 text-gray-400 text-sm font-bold">
+                                {isHome ? (t('labels.home_empty') || 'Welcome. Select a document from the sidebar to get started.') : 'No content available.'}
                             </div>
                         )
                     ) : (
