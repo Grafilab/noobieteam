@@ -1,4 +1,6 @@
 window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
+
+    
     const { showPrompt, showAlert, showConfirm } = window.useModals();
     const { showToast } = window.useToasts();
     const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
@@ -10,14 +12,11 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
     const addSecret = async function() {
         if (!newSecret.service || !newSecret.account || !newSecret.password) return showAlert(t('alerts.missing_fields'), 'Missing Intel');
         try {
-            const res = await fetch('/api/workspaces/' + workspace.id + '/vault/encrypt', { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({ text: JSON.stringify(newSecret), password: user?.vaultPin || user?.password }) 
-            });
-            if (!res.ok) throw new Error('Encryption failed');
-            const data = await res.json();
-            const encrypted = data.encrypted;
+            const CryptoJS = window.CryptoJS;
+            if (!CryptoJS) throw new Error('CryptoJS library not loaded');
+            const pass = user?.vaultPin || user?.password;
+            if (!pass) throw new Error("No Master PIN configured");
+            const encrypted = CryptoJS.AES.encrypt(JSON.stringify(newSecret), pass).toString();
             
             const updatedSecrets = secrets.concat([{ id: window.generateId('sec'), service: newSecret.service, url: newSecret.url, value: encrypted }]);
             
@@ -74,14 +73,44 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
         setRevealError('');
         try {
             const s = secrets.find(x => (x.id === revealPrompt.id || x._id === revealPrompt.id));
-            const res = await fetch('/api/workspaces/' + workspace.id + '/vault/decrypt', { 
-                method: 'POST', 
-                headers: {'Content-Type':'application/json'}, 
-                body: JSON.stringify({ cipherBase64: s.value, password: revealPrompt.pass }) 
-            });
-            if (!res.ok) throw new Error(t('alerts.credentials_mismatch'));
-            const data = await res.json();
-            setRevealData(JSON.parse(data.decrypted));
+            const CryptoJS = window.CryptoJS;
+            if (!CryptoJS) throw new Error('CryptoJS library not loaded');
+            let bytes;
+            try {
+                // Hashing the input to match the user.vaultPin hash used during encryption
+                const hashedPass = CryptoJS.SHA256(revealPrompt.pass).toString();
+                bytes = CryptoJS.AES.decrypt(s.value, hashedPass);
+                
+                // Integrity check: if UTF-8 conversion fails or is empty, try raw PIN (legacy support)
+                let test;
+                try { test = bytes.toString(CryptoJS.enc.Utf8); } catch(e) {}
+                
+                if (!test) {
+                    bytes = CryptoJS.AES.decrypt(s.value, revealPrompt.pass);
+                }
+            } catch (e) {
+                throw new Error(t('alerts.credentials_mismatch') || 'Invalid PIN or Malformed Data');
+            }
+            let decryptedData;
+            try {
+                decryptedData = bytes.toString(CryptoJS.enc.Utf8);
+            } catch (e) {
+                // If Utf8 fails, try legacy Latin1 or Base64 decoding, or just throw mismatch
+                try {
+                    decryptedData = bytes.toString(CryptoJS.enc.Latin1);
+                } catch (e2) {
+                    throw new Error(t('alerts.credentials_mismatch') || 'Invalid PIN or Malformed Data');
+                }
+            }
+            if (!decryptedData) throw new Error(t('alerts.credentials_mismatch'));
+            let parsedData;
+            try {
+                parsedData = JSON.parse(decryptedData);
+            } catch (e) {
+                // Handle legacy format or unquoted strings if JSON.parse fails but decryption was somewhat successful
+                parsedData = decryptedData;
+            }
+            setRevealData(parsedData);
             setRevealPrompt({ isOpen: false, id: null, pass: '' });
             showToast(t('alerts.decryption_successful'));
         } catch (err) {
@@ -164,7 +193,8 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
                 {secrets.length === 0 && (
                     <div className="py-20 text-center flex flex-col items-center">
                         <window.Icon name="lock" size={48} className="text-gray-100 mb-4" />
-                        <p className="text-gray-300 italic text-sm font-medium">Vault is currently empty. Secure your first credential above.</p>
+                        <p className="text-gray-300 italic text-sm font-medium">{t('labels.vault_empty')}</p>
+                        <p className="text-gray-200 text-xs">{t('labels.secure_first_credential')}</p>
                     </div>
                 )}
             </div>

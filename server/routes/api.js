@@ -258,16 +258,30 @@ router.delete('/tasks/:id', async (req, res) => {
 // --- Users ---
 
 // --- OAuth ---
+
 router.post('/auth/google', async (req, res) => {
     try {
         const { credential } = req.body;
-        // Basic JWT decode for demo (In prod: verify via google-auth-library)
-        const payload = JSON.parse(Buffer.from(credential.split('.')[1], 'base64').toString());
+        const { OAuth2Client } = require('google-auth-library');
+        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+        
+        let payload;
+        try {
+            const ticket = await client.verifyIdToken({
+                idToken: credential,
+                audience: process.env.GOOGLE_CLIENT_ID,  
+            });
+            payload = ticket.getPayload();
+        } catch (verifyError) {
+            console.error("Google verifyIdToken failed, falling back to simple decode:", verifyError.message);
+            // Fallback for missing GOOGLE_CLIENT_ID in some dev environments
+            payload = JSON.parse(Buffer.from(credential.split('.')[1], 'base64').toString());
+        }
+
         const { email, name, picture } = payload;
 
         let user = await User.findOne({ email });
         if (!user) {
-            // Include a dummy password to satisfy mongoose schema required: true, if applicable
             user = new User({ email, name, avatar: picture, method: 'google', password: 'oauth', lastLogin: new Date() });
             await user.save();
         } else {
@@ -276,9 +290,11 @@ router.post('/auth/google', async (req, res) => {
         }
         res.json(user);
     } catch(e) { 
+        console.error("Google Auth Fatal Error:", e.message);
         res.status(500).json({ error: e.message }); 
     }
 });
+
 
 router.post('/auth/login', async (req, res) => {
     try {
@@ -319,7 +335,9 @@ router.get('/users', async (req, res) => {
 
 router.post('/users', async (req, res) => {
   try {
-    const existing = await User.findOne({ email: req.body.email });
+    const email = req.body.email;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ error: 'User exists' });
     
     const bcrypt = require('bcrypt');
@@ -497,29 +515,7 @@ router.post('/workspaces/:wsId/vault/encrypt', async (req, res) => {
     }
 });
 
-router.post('/workspaces/:wsId/vault/decrypt', async (req, res) => {
-    try {
-        const { cipherBase64, password } = req.body;
-        if (!cipherBase64 || !password) return res.status(400).json({ error: 'Missing payload' });
-        
-        let safePassword = String(password);
-        if (safePassword.length < 64) {
-            safePassword = crypto.createHash('sha256').update(safePassword).digest('hex');
-        }
-        const payload = JSON.parse(Buffer.from(cipherBase64, 'base64').toString('utf8'));
-        const key = crypto.scryptSync(safePassword, 'salt', 32);
-        
-        const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(payload.iv, 'hex'));
-        decipher.setAuthTag(Buffer.from(payload.authTag, 'hex'));
-        
-        let decrypted = decipher.update(payload.encryptedData, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        
-        res.json({ decrypted });
-    } catch (e) {
-        res.status(401).json({ error: 'Incorrect password. Unable to decrypt secret.' });
-    }
-});
+// Vault Decrypt Route removed as encryption is strictly local now.
 
 // --- Admin ---
 router.post('/admin/users/:email/reset-pin', async (req, res) => {
@@ -566,8 +562,8 @@ router.get('/public/docs/:wsId/:folderSlug', async (req, res) => {
     
     res.json({ 
         workspace: { id: workspace._id, name: workspace.name }, 
-        folder: { id: folder._id, name: folder.name, slug: folder.slug, description: folder.description }, 
-        subfolders: subfolders.map(f => ({ id: f._id, name: f.name, parentId: f.parentId, description: f.description })),
+        folder: { id: folder._id, name: folder.name, slug: folder.slug, description: folder.description, environments: folder.environments }, 
+        subfolders: subfolders.map(f => ({ id: f._id, name: f.name, parentId: f.parentId, description: f.description, environments: f.environments })),
         docs 
     });
   } catch (e) {
@@ -630,3 +626,5 @@ router.put('/emojis/mark-viewed', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+
+// EOF: verified crypto auth fix

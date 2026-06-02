@@ -69,7 +69,12 @@
     "creating_branch": "Creating...",
     "confirm_unbind_branch": "Unlink Branch?",
     "edit_settings": "Edit Settings",
-    "link_branch": "Link Branch"
+    "link_branch": "Link Branch",
+    "import_postman": "Import Postman Collection",
+    "add_environment": "Add Environment",
+    "bulk_erase": "Bulk Erase",
+    "move_selected": "Move Selected",
+    "delete_selected": "Delete Selected"
   },
   "labels": {
     "email": "Email",
@@ -196,7 +201,20 @@
     "bitbucket_api_token_set": "set — leave blank to keep",
     "create_api_token": "Create an Atlassian API token →",
     "link_bitbucket_branch_title": "Link Bitbucket Branch",
-    "branch_name": "New Branch Name"
+    "branch_name": "New Branch Name",
+    "environments": "Environments",
+    "no_environment": "No Environment",
+    "folder_overview": "Folder Overview",
+    "selected_count": "{count} selected",
+    "root": "Root",
+    "body": "Body",
+    "params": "Params",
+    "auth": "Auth",
+    "env_name_placeholder": "e.g. Staging",
+    "env_url_placeholder": "https://api.staging.example.com",
+    "vault_empty": "Vault is currently empty.",
+    "secure_first_credential": "Secure your first credential above.",
+    "import_postman_tooltip": "Import Postman Collection"
   },
   "alerts": {
     "welcome_back": "Welcome back, {name}! 🚀",
@@ -275,6 +293,14 @@
     "branch_created": "Branch created: {name}",
     "bitbucket_credentials_help": "API credentials are required to actually create branches on Bitbucket.",
     "bitbucket_credentials_perms": "Scope the token to Bitbucket and grant repository read/write access.",
-    "confirm_unbind_branch_message": "Unlink {name} from this card? The branch on Bitbucket will not be deleted."
+    "confirm_unbind_branch_message": "Unlink {name} from this card? The branch on Bitbucket will not be deleted.",
+    "postman_import_success": "Postman Collection imported successfully! 🚀",
+    "postman_import_error": "Failed to parse or import Postman Collection",
+    "import_error_title": "Import Error",
+    "bulk_erase_confirm": "Delete {count} selected documents? This cannot be undone.",
+    "docs_erased": "{count} documents erased.",
+    "docs_moved": "{count} documents moved.",
+    "sending_request": "Sending Request...",
+    "api_execution_placeholder": "Hit Send Request to execute the API call."
   }
 }

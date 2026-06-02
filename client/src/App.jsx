@@ -29,7 +29,10 @@ window.AuthScreen = ({ onAuthSuccess }) => {
     const handleGoogleResponse = async (response) => {
         try {
             const res = await fetch('/api/auth/google', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ credential: response.credential }) });
-            if (!res.ok) throw new Error('Google authentication failed on server.');
+            if (!res.ok) {
+                const errData = await res.json().catch(() => null);
+                throw new Error(errData?.error || 'Google authentication failed on server.');
+            }
             const user = await res.json();
             onAuthSuccess(user);
             showToast(t('alerts.welcome_back', { name: user.name || user.email.split('@')[0] }));
@@ -46,7 +49,10 @@ window.AuthScreen = ({ onAuthSuccess }) => {
         if (mode === 'signup') {
             try {
                 const res = await fetch('/api/users', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ email, password, name: email.split('@')[0] }) });
-                if (!res.ok) return showAlert(t('alerts.duplicate_user'), t('alerts.duplicate_user_title'));
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => null);
+                    return showAlert(errData?.error || t('alerts.duplicate_user'), t('alerts.duplicate_user_title'));
+                }
                 setMode('login');
                 showAlert(t('alerts.signup_sync'), t('alerts.signup_sync_title'));
             } catch(e) { showAlert(e.message, 'Error'); }
@@ -233,12 +239,39 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
     const [testLoading, setTestLoading] = React.useState(false);
     const [showTestPanel, setShowTestPanel] = React.useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = React.useState(false);
+    const [activeEnvId, setActiveEnvId] = React.useState('');
     
-    const handleTestApi = async (spec) => {
+    
+    const handleTestApi = async (spec, activeDocFolderId) => {
         setTestLoading(true);
         setTestResponse(null);
         try {
-            let url = spec.url;
+            let url = spec.url || '';
+            const docEnvs = folder?.environments || [];
+            const selectedEnv = docEnvs.find(e => e.id === activeEnvId);
+            
+            if (selectedEnv && selectedEnv.baseUrl) {
+                if (/\{\{.*?\}\}/.test(url)) {
+                    url = url.replace(/\{\{.*?\}\}/g, selectedEnv.baseUrl.replace(/\/$/, ''));
+                } else if (/^https?:\/\//.test(url)) {
+                    try {
+                        const parsedUrl = new URL(url);
+                        const parsedBase = new URL(selectedEnv.baseUrl);
+                        parsedUrl.protocol = parsedBase.protocol;
+                        parsedUrl.host = parsedBase.host;
+                        parsedUrl.port = parsedBase.port;
+                        url = parsedUrl.toString();
+                    } catch (e) {}
+                } else {
+                    const match = url.match(/^([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost)(:\d+)?(\/.*)?$/);
+                    if (match) {
+                        url = selectedEnv.baseUrl.replace(/\/$/, '') + (match[3] || '');
+                    } else {
+                        url = selectedEnv.baseUrl.replace(/\/$/, '') + '/' + url.replace(/^\//, '');
+                    }
+                }
+            }
+
             if (spec.queryParams && spec.queryParams.length > 0) {
                 const params = new URLSearchParams();
                 spec.queryParams.forEach(q => { if(q.key) params.append(q.key, q.value); });
@@ -385,10 +418,49 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                     {activeDoc ? (
                         activeDoc.type === 'API' ? (
                             <div className="max-w-4xl mx-auto animate-fade-in">
+                            {(() => {
+                                const docEnvs = folder?.environments || [];
+                                const selectedEnv = docEnvs.find(e => e.id === activeEnvId);
+                                let displayUrl = activeDoc.apiSpec?.url || '';
+                                if (selectedEnv && selectedEnv.baseUrl) {
+                                    if (/\{\{.*?\}\}/.test(displayUrl)) {
+                                        displayUrl = displayUrl.replace(/\{\{.*?\}\}/g, selectedEnv.baseUrl.replace(/\/$/, ''));
+                                    } else if (/^https?:\/\//.test(displayUrl)) {
+                                        try {
+                                            const parsedUrl = new URL(displayUrl);
+                                            const parsedBase = new URL(selectedEnv.baseUrl);
+                                            parsedUrl.protocol = parsedBase.protocol;
+                                            parsedUrl.host = parsedBase.host;
+                                            parsedUrl.port = parsedBase.port;
+                                            displayUrl = parsedUrl.toString();
+                                        } catch (e) {}
+                                    } else {
+                                        const match = displayUrl.match(/^([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|localhost)(:\d+)?(\/.*)?$/);
+                                        if (match) {
+                                            displayUrl = selectedEnv.baseUrl.replace(/\/$/, '') + (match[3] || '');
+                                        } else {
+                                            displayUrl = selectedEnv.baseUrl.replace(/\/$/, '') + '/' + displayUrl.replace(/^\//, '');
+                                        }
+                                    }
+                                }
+                                return (
                             <div className="space-y-8">
-                                <div className="flex items-center gap-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl">
+                                <div className="flex flex-col gap-4">
+                                {docEnvs.length > 0 && (
+                                    <div className="flex justify-end">
+                                        <select 
+                                            className="bg-purple-50 text-purple-700 font-bold text-xs px-4 py-3 rounded-xl border border-purple-100 outline-none cursor-pointer"
+                                            value={activeEnvId}
+                                            onChange={e => setActiveEnvId(e.target.value)}
+                                        >
+                                            <option value="">No Environment</option>
+                                            {docEnvs.map(env => <option key={env.id} value={env.id}>{env.name}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-4 p-4 bg-gray-50 border border-gray-200 rounded-2xl w-full overflow-hidden max-w-full">
                                     <span className={`font-black px-3 py-1 rounded-lg text-xs ${activeDoc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : activeDoc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : activeDoc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{activeDoc.apiSpec?.method}</span>
-                                    <code className="text-sm font-bold text-gray-800">{activeDoc.apiSpec?.url || 'No URL specified'}</code>
+                                    <code className="text-sm font-bold text-gray-800 break-all">{displayUrl || 'No URL specified'}</code>
                                 </div>
                                 {activeDoc.content && (
                                     <div className="prose max-w-none text-sm" dangerouslySetInnerHTML={{__html: activeDoc.content}}></div>
@@ -396,11 +468,11 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                 {activeDoc.apiSpec?.headers?.length > 0 && (
                                     <div>
                                         <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 mb-4">Headers</h3>
-                                        <table className="w-full text-left text-sm border-collapse">
+                                        <table className="w-full text-left text-sm border-collapse table-fixed">
                                             <thead><tr className="border-b-2 border-gray-100"><th className="pb-2 font-bold w-1/3">Key</th><th className="pb-2 font-bold">Value</th></tr></thead>
                                             <tbody>
                                                 {activeDoc.apiSpec.headers.map((h, i) => (
-                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{h.key}</td><td className="py-3 font-mono text-gray-800">{h.value}</td></tr>
+                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{h.key}</td><td className="py-3 font-mono text-gray-800 break-all whitespace-normal min-w-0">{h.value}</td></tr>
                                                 ))}
                                             </tbody>
                                         </table>
@@ -409,11 +481,11 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                 {activeDoc.apiSpec?.queryParams?.length > 0 && (
                                     <div>
                                         <h3 className="text-sm font-black uppercase tracking-widest text-gray-400 mb-4">Query Parameters</h3>
-                                        <table className="w-full text-left text-sm border-collapse">
+                                        <table className="w-full text-left text-sm border-collapse table-fixed">
                                             <thead><tr className="border-b-2 border-gray-100"><th className="pb-2 font-bold w-1/3">Key</th><th className="pb-2 font-bold">Value</th></tr></thead>
                                             <tbody>
                                                 {activeDoc.apiSpec.queryParams.map((q, i) => (
-                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{q.key}</td><td className="py-3 font-mono text-gray-800">{q.value}</td></tr>
+                                                    <tr key={i} className="border-b border-gray-50"><td className="py-3 font-mono text-gray-600">{q.key}</td><td className="py-3 font-mono text-gray-800 break-all whitespace-normal min-w-0">{q.value}</td></tr>
                                                 ))}
                                             </tbody>
                                         </table>
@@ -429,7 +501,7 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                 <div className="mt-12 pt-8 border-t border-gray-100">
                                     <div className="flex justify-between items-center mb-6">
                                         <h3 className="text-sm font-black uppercase tracking-widest text-black">{t('labels.live_api_test') || 'Live API Test'}</h3>
-                                        <button onClick={() => { setShowTestPanel(true); handleTestApi(activeDoc.apiSpec); }} disabled={testLoading} className="px-6 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition disabled:opacity-50">
+                                        <button onClick={() => { setShowTestPanel(true); handleTestApi(activeDoc.apiSpec, activeDoc.folderId); }} disabled={testLoading} className="px-6 py-3 bg-black text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:scale-105 active:scale-95 transition disabled:opacity-50">
                                             {testLoading ? t('actions.sending') : t('actions.send_request')}
                                         </button>
                                     </div>
@@ -447,6 +519,9 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                     )}
                                 </div>
                             </div>
+                            );
+                            })()}
+                        </div>
                         ) : (
                             <div className="max-w-4xl mx-auto">
                                 <div className="ql-editor prose max-w-none" dangerouslySetInnerHTML={{__html: activeDoc.content}}></div>
