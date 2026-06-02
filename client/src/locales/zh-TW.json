@@ -6,6 +6,7 @@
     "vault": "保險庫"
   },
   "actions": {
+    "discard_changes": "放棄變更？",
     "login": "登錄",
     "signup": "註冊",
     "logout": "注销",
@@ -196,6 +197,7 @@
     "import_postman_tooltip": "匯入 Postman 集合"
   },
   "alerts": {
+    "confirm_discard_changes": "您有未儲存的變更。確定要放棄嗎？",
     "welcome_back": "歡迎回來，{name}！🚀",
     "credentials_mismatch": "未授權：憑據不匹配。",
     "access_denied": "訪問被拒絕",

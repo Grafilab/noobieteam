@@ -6,6 +6,7 @@
     "vault": "Brankas"
   },
   "actions": {
+    "discard_changes": "Buang Perubahan?",
     "login": "Masuk",
     "signup": "Daftar",
     "logout": "Keluar",
@@ -196,6 +197,7 @@
     "import_postman_tooltip": "Impor Koleksi Postman"
   },
   "alerts": {
+    "confirm_discard_changes": "Anda memiliki perubahan yang belum disimpan. Yakin ingin membuangnya?",
     "welcome_back": "Selamat datang kembali, {name}! 🚀",
     "credentials_mismatch": "Tidak sah: Kredensial tidak cocok.",
     "access_denied": "Akses Ditolak",

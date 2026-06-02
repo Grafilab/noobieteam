@@ -6,6 +6,7 @@
     "vault": "保险库"
   },
   "actions": {
+    "discard_changes": "放弃更改？",
     "login": "登录",
     "signup": "注册",
     "logout": "注销",
@@ -196,6 +197,7 @@
     "import_postman_tooltip": "导入 Postman 集合"
   },
   "alerts": {
+    "confirm_discard_changes": "您有未保存的更改。确定要放弃吗？",
     "welcome_back": "欢迎回来，{name}！🚀",
     "credentials_mismatch": "未授权：凭据不匹配。",
     "access_denied": "访问被拒绝",

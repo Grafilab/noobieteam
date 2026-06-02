@@ -6,6 +6,7 @@
     "vault": "Хранилище"
   },
   "actions": {
+    "discard_changes": "Отменить изменения?",
     "login": "Войти",
     "signup": "Регистрация",
     "logout": "Выйти",
@@ -196,6 +197,7 @@
     "import_postman_tooltip": "Импорт коллекции Postman"
   },
   "alerts": {
+    "confirm_discard_changes": "У вас есть несохранённые изменения. Вы уверены, что хотите их отменить?",
     "welcome_back": "С возвращением, {name}! 🚀",
     "credentials_mismatch": "Не авторизован: учетные данные не совпадают.",
     "access_denied": "Доступ запрещен",
