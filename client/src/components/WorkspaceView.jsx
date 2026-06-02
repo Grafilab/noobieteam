@@ -91,7 +91,7 @@ function readWorkspaceNotificationsForWorkspace(ws) {
     return [];
 }
 
-window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, theme, onUpdateUser, isJukeboxActive }) => {
+window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, theme, onUpdateUser, onOpenProfile, isJukeboxActive }) => {
     const { showConfirm, showPrompt, showAlert } = window.useModals();
     const { showToast } = window.useToasts();
     const [columns, setColumns] = React.useState(workspace.columns && workspace.columns.length > 0 ? workspace.columns : [{ id: 'todo', title: 'To Do', order: 0 }]);
@@ -779,7 +779,7 @@ User Request: ${aiInput}` : aiInput;
                             </div>
                         )}
                     </div>
-                    <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} />
+                    <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} onOpenProfile={onOpenProfile} />
                 </div>
             </nav>
             {/* Mobile Tab Nav */}

@@ -1,4 +1,4 @@
-window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdateUser, urlWsSlug }) => {
+window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdateUser, onOpenProfile, urlWsSlug }) => {
             const { showPrompt, showConfirm } = window.useModals();
             const { showToast } = window.useToasts();
             const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
@@ -117,8 +117,14 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                 return filtered.filter(w => w.archived === viewArchived);
             }, [workspaces, viewArchived, isAdmin, user]);
 
+            const homeStyle = user?.homeBackgroundImage ? {
+                backgroundImage: `linear-gradient(rgba(255,255,255,0.84), rgba(255,255,255,0.9)), url(${user.homeBackgroundImage})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+            } : {};
+
             return (
-                <div className="h-screen bg-white animate-fade-in relative flex flex-col text-black">
+                <div className="h-screen bg-white animate-fade-in relative flex flex-col text-black" style={homeStyle}>
                 {pinPrompt.isOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 animate-fade-in">
                     <div className="max-w-[320px] w-[95%] mx-auto bg-white p-6 md:p-8 rounded-[2rem] shadow-2xl text-center">
@@ -145,7 +151,7 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                                 </button>
                             )}
                         </div>
-                        <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} />
+                        <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} onOpenProfile={onOpenProfile} />
                     </nav>
                     {showUserManagement && <window.UserManagement user={user} adminEmail={adminEmail} onClose={() => setShowUserManagement(false)} />}
                     <style>{`
