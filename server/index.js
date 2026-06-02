@@ -70,8 +70,6 @@ app.use((req, res, next) => {
     }
     next();
 });
-app.use(express.static(path.join(__dirname, '../client')));
-
 app.get('/api/config', (req, res) => {
     res.json({ 
         adminEmail: ADMIN_EMAIL,
@@ -97,8 +95,10 @@ app.delete('/api/workspaces/:id', async (req, res) => {
     }
 });
 
-// Use other API routes
+// API routes before static files so /api/* is never swallowed
 app.use('/api', apiRoutes);
+
+app.use(express.static(path.join(__dirname, '../client')));
         
 app.get('/workspace/*', (req, res) => {
     res.sendFile(path.join(__dirname, '../client/index.html'));

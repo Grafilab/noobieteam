@@ -111,6 +111,7 @@ userSchema.set('toJSON', {
   virtuals: true,
   transform: (_doc, ret) => {
     if (!ret.avatar && ret.avatarUrl) ret.avatar = ret.avatarUrl;
+    delete ret.password;
     return ret;
   }
 });
