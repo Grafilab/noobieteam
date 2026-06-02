@@ -542,6 +542,8 @@ window.Main = () => {
     const [translations, setTranslations] = React.useState({});
     const [ws, setWs] = React.useState(null);
     const [showProfile, setShowProfile] = React.useState(false);
+    const [pendingCardId, setPendingCardId] = React.useState(null);
+    const [pendingMyTasks, setPendingMyTasks] = React.useState(false);
     const [theme, setTheme] = React.useState(() => localStorage.getItem('nt_theme') || 'default');
     const [player, setPlayer] = React.useState({ url: '', isMinimized: true });
     const [toasts, setToasts] = React.useState([]);
@@ -640,8 +642,8 @@ window.Main = () => {
                 {isPublicDocs ? <window.PublicDocsView wsPath={publicWsPath} folderName={publicFolderName} /> :
                 !user ? <window.AuthScreen onAuthSuccess={setUser} /> :
                 showProfile ? <window.ProfilePage user={user} onBack={() => setShowProfile(false)} onUpdateUser={setUser} theme={theme} /> :
-                 !ws ? <window.WorkspaceHub user={user} onLogout={() => { setShowProfile(false); setUser(null); showToast("Session ended. 👋"); }} onSelect={selectWorkspace} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} urlWsSlug={urlWsSlug} /> :
-                 <window.WorkspaceView workspace={ws} onBack={() => { window.history.pushState({}, '', '/'); setWs(null); }} user={user} onLogout={() => { setShowProfile(false); setWs(null); setUser(null); showToast(t('alerts.session_ended') || "Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} isJukeboxActive={!!player.url && !player.isMinimized} />}
+                 !ws ? <window.WorkspaceHub user={user} onLogout={() => { setShowProfile(false); setUser(null); showToast("Session ended. 👋"); }} onSelect={(selectedWs, cardId) => { window.history.pushState({}, '', '/workspace/' + (selectedWs.slug || selectedWs.id || selectedWs._id)); setPendingCardId(cardId || null); setWs(selectedWs); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} urlWsSlug={urlWsSlug} openMyTasks={pendingMyTasks} onConsumeMyTasks={() => setPendingMyTasks(false)} /> :
+                 <window.WorkspaceView workspace={ws} initialCardId={pendingCardId} onOpenMyTasks={() => { window.history.pushState({}, '', '/'); setPendingCardId(null); setPendingMyTasks(true); setWs(null); }} onBack={() => { window.history.pushState({}, '', '/'); setPendingCardId(null); setWs(null); }} user={user} onLogout={() => { setShowProfile(false); setWs(null); setPendingCardId(null); setUser(null); showToast(t('alerts.session_ended') || "Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} isJukeboxActive={!!player.url && !player.isMinimized} />}
                 <window.FloatingJukebox />
                 <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} type={t.type} onRemove={() => removeToast(t.id)} />)}</div>
                 {modalState.isOpen && (

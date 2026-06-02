@@ -70,12 +70,14 @@ if (!window.NTNotifications) {
     };
 }
 
-window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdateUser, onOpenProfile, urlWsSlug }) => {
+window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdateUser, onOpenProfile, urlWsSlug, openMyTasks, onConsumeMyTasks }) => {
             const { showPrompt, showConfirm } = window.useModals();
             const { showToast } = window.useToasts();
             const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
             const [workspaces, setWorkspaces] = React.useState([]);
             const [loading, setLoading] = React.useState(true);
+            const [showMyTasks, setShowMyTasks] = React.useState(!!openMyTasks);
+            React.useEffect(() => { if (openMyTasks && onConsumeMyTasks) onConsumeMyTasks(); }, []);
     const onSelectRef = React.useRef(onSelect); React.useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
             const [pinPrompt, setPinPrompt] = React.useState({ isOpen: false, pin: '', confirm: '' });
             const [pinError, setPinError] = React.useState('');
@@ -317,6 +319,19 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                 backgroundPosition: 'center'
             } : {};
 
+            const handleOpenTask = (task) => {
+                const targetWs = (Array.isArray(workspaces) ? workspaces : []).find(w => w._id === task.workspaceId || w.id === task.workspaceId);
+                if (targetWs) {
+                    onSelectRef.current(targetWs, task.id || task._id);
+                } else {
+                    showToast(t('alerts.board_not_found') || 'Board not found for this task.');
+                }
+            };
+
+            if (showMyTasks) {
+                return <window.MyTasksView user={user} workspaces={workspaces} theme={theme} onThemeChange={onThemeChange} onLogout={onLogout} onUpdateUser={onUpdateUser} onBack={() => setShowMyTasks(false)} onOpenTask={handleOpenTask} />;
+            }
+
             return (
                 <div className="h-screen bg-white animate-fade-in relative flex flex-col text-black" style={homeStyle}>
                 {pinPrompt.isOpen && (
@@ -434,7 +449,10 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                                 <h2 className="text-3xl md:text-5xl font-black tracking-tighter">{viewArchived ? t('actions.archive_workspace') : t('labels.workspace') + 's'}</h2>
                                 <p className="text-gray-400 mt-2 font-bold uppercase tracking-[0.2em] text-[10px]">{t('labels.project_command_hub') || "Project Command Hub"}</p>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex gap-4 items-center">
+                                <button onClick={() => setShowMyTasks(true)} className="px-6 py-4 rounded-full bg-white text-gray-700 border border-gray-200 shadow-xl hover:scale-105 active:scale-95 transition flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+                                    <window.Icon name="list-checks" size={18} /> {t('labels.my_tasks') || 'My Tasks'}
+                                </button>
                                 {isAdmin && (
                                     <button onClick={() => setViewArchived(!viewArchived)} className={`w-9 h-9 flex items-center justify-center rounded-xl transition ${viewArchived ? 'bg-black text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                                         <window.Icon name={viewArchived ? "layout" : "archive"} size={16} />

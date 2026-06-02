@@ -74,6 +74,16 @@
     "delete_selected": "Delete Selected"
   },
   "labels": {
+    "my_tasks": "My Tasks",
+    "my_tasks_subtitle": "All your work across every board",
+    "assigned_to_me": "Assigned to me",
+    "all_tasks": "All tasks",
+    "all_boards": "All Boards",
+    "all_statuses": "All Statuses",
+    "task": "Task",
+    "board": "Board",
+    "no_tasks_found": "No tasks match your filters. 🎉",
+    "loading": "Loading your tasks...",
     "email": "Email",
     "password": "Password",
     "current_password": "Current Password",
