@@ -200,7 +200,23 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     const { showConfirm, showPrompt, showAlert } = window.useModals();
     const { showToast } = window.useToasts();
     const [columns, setColumns] = React.useState(workspace.columns && workspace.columns.length > 0 ? workspace.columns : [{ id: 'todo', title: 'To Do', order: 0 }]);
+    const [localWorkspace, setLocalWorkspace] = React.useState(workspace);
     const [cards, setCards] = React.useState([]);
+    const [activityLogs, setActivityLogs] = React.useState([]);
+
+    const logActivity = React.useCallback(async (action, resourceType, resourceName) => {
+        try {
+            const res = await fetch(`/api/workspaces/${workspace.id}/activity`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: user?.email || 'System', action, resourceType, resourceName })
+            });
+            if (res.ok) {
+                const log = await res.json();
+                setActivityLogs(prev => [log, ...prev]);
+            }
+        } catch(e) { console.error('Activity log error:', e); }
+    }, [workspace.id, user?.email]);
     const [allUsers, setAllUsers] = React.useState([]);
     const [members, setMembers] = React.useState(() => {
         if (!workspace || !workspace.members) return [user?.email].filter(Boolean);
@@ -334,11 +350,15 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     React.useEffect(() => {
         const fetchScopeId = getWorkspaceCanonicalId(workspace);
         workspaceFetchScopeRef.current = fetchScopeId;
-        fetch(`/api/workspaces/${workspace.id}/tasks`).then(r => r.json()).then(data => { 
+        fetch(`/api/workspaces/${workspace.id}/activity`).then(r => r.json()).then(data => {
+            if (Array.isArray(data)) setActivityLogs(data);
+        }).catch(() => {});
+
+        fetch(`/api/workspaces/${workspace.id}/tasks`).then(r => r.json()).then(data => {
             if (workspaceFetchScopeRef.current !== fetchScopeId) return;
             const validData = Array.isArray(data) ? data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)) : [];
-            setCards(validData); 
-            setLoading(false); 
+            setCards(validData);
+            setLoading(false);
             
             // Check for expired cards
             const now = new Date();
@@ -506,6 +526,8 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         };
     }, [addWorkspaceNotification, user?.email, workspace]);
     const [showBacklog, setShowBacklog] = React.useState(false);
+    const [showActivityLog, setShowActivityLog] = React.useState(false);
+    const [activityTooltip, setActivityTooltip] = React.useState(null);
     
     // Safety check for Drag and Drop library
     const dnd = window.ReactBeautifulDnd;
@@ -635,7 +657,9 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(fields)
         });
-        return await res.json();
+        const updated = await res.json();
+        setLocalWorkspace(prev => ({ ...prev, ...fields }));
+        return updated;
     };
 
     const epics = React.useMemo(() => [...new Set((cards || []).map(c => c && c.epic).filter(Boolean))], [cards]);
@@ -675,6 +699,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             if (!res.ok) return;
             emitCardMoveNotification(card, nextColId, movedTask || {});
             setCards(prev => prev.map(c => c.id === id ? { ...(movedTask || c), id: c.id || movedTask?.id || movedTask?._id, columnId: nextColId, col: nextColId } : c));
+            logActivity('Moved card to ' + (columns[nextIdx]?.title || nextColId), 'card', card.title);
         }
     };
 
@@ -1112,8 +1137,9 @@ User Request: ${aiInput}` : aiInput;
                             </div>
                         </div>
                         <div className="flex gap-2">
+                            <button onClick={() => setShowActivityLog(!showActivityLog)} className={`px-6 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex items-center gap-2 whitespace-nowrap ${showActivityLog ? 'bg-purple-100 text-purple-700' : 'bg-white text-gray-700 border border-gray-200'}`}><window.Icon name="activity" size={14} /> {t('actions.activity_log') || 'Activity Log'}</button>
                             <button onClick={() => setShowBacklog(!showBacklog)} className={`px-6 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex items-center gap-2 ${showBacklog ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700 border border-gray-200'}`}><window.Icon name="list" size={14} /> {t('actions.backlog')}</button>
-                            <button onClick={() => showPrompt(t('actions.new_stage'), t('labels.stage_name'), async (name) => { if(name) { const newCols = [...columns, { id: window.generateId('col'), title: name }]; await fetch(`/api/workspaces/${workspace.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columns: newCols }) }); setColumns(newCols); } })} className="bg-black text-white px-8 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex-shrink-0">{t('actions.new_stage')}</button>
+                            <button onClick={() => showPrompt(t('actions.new_stage'), t('labels.stage_name'), async (name) => { if(name) { const newCols = [...columns, { id: window.generateId('col'), title: name }]; await fetch(`/api/workspaces/${workspace.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columns: newCols }) }); setColumns(newCols); logActivity('Added stage', 'stage', name); } })} className="bg-black text-white px-8 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex-shrink-0">{t('actions.new_stage')}</button>
                         </div>
                     </header>
                     <dnd.DragDropContext onDragEnd={async (result) => {
@@ -1157,6 +1183,10 @@ User Request: ${aiInput}` : aiInput;
                                 const moveRes = await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
                                 const movedTask = await moveRes.json().catch(() => null);
                                 if (moveRes.ok) emitCardMoveNotification(draggedCard, destination.droppableId, movedTask || {});
+                                
+                                const movedCard = cards.find(c => c.id === draggableId || c._id === draggableId);
+                                const destColTitle = columns.find(c => c.id === destination.droppableId)?.title || destination.droppableId;
+                                logActivity('Moved card to ' + destColTitle, 'card', movedCard?.title);
                                 await fetch(`/api/workspaces/${workspace.id || workspace._id}/tasks/bulk-order`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ updates: bulkUpdates }) });
                             }}>
                             <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden h-full w-full">
@@ -1200,11 +1230,58 @@ User Request: ${aiInput}` : aiInput;
                                 <div className="p-3 border-t border-gray-200 bg-gray-100/50 rounded-b-[2rem]">
                                     <button onClick={() => { 
                                         const nc = { columnId: 'backlog', title: t('labels.new_backlog_item'), urgency: 'LOW', assignees: [user?.email], auditEvent: { user: user?.email || 'System', action: 'Created backlog card' } };
-                                        fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); }); 
+                                        fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); logActivity('Created backlog card', 'card', nc.title); }); 
                                     }} className="w-full py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition shadow-sm flex items-center justify-center gap-2">
                                         <window.Icon name="plus" size={14} /> {t('actions.add_to_backlog')}
                                     </button>
                                 </div>
+                            </div>
+                        )}
+                        {showActivityLog && (() => {
+                            const allLogs = activityLogs;
+                            return (
+                                <div className="w-full md:w-80 flex-shrink-0 bg-gray-50 border border-gray-200 rounded-[2rem] flex flex-col h-[50vh] md:h-full animate-fade-in">
+                                    <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-100/50 rounded-t-[2rem]">
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 flex items-center gap-2">
+                                            <window.Icon name="activity" size={16} className="text-purple-500" />
+                                            {t('actions.activity_log') || 'Activity Log'}
+                                        </h3>
+                                        <button onClick={() => setShowActivityLog(false)} className="p-1 hover:bg-gray-200 rounded opacity-50 hover:opacity-100 transition"><window.Icon name="x" size={14}/></button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar p-3 pb-6 space-y-2">
+                                        {allLogs.length === 0 ? (
+                                            <p className="text-[10px] text-gray-400 font-bold text-center py-8 uppercase tracking-widest">{t('labels.no_activity') || 'No activity yet'}</p>
+                                        ) : allLogs.map((log, i) => (
+                                            <div key={log.id || i} className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex flex-col gap-0.5 overflow-hidden">
+                                                        <span className="text-[10px] font-black text-gray-700 truncate">{log.user || 'System'}</span>
+                                                        <span className="text-[9px] text-gray-500 font-bold">{log.action}</span>
+                                                        {log.resourceName && (
+                                                            <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
+                                                                <span className="min-w-0 flex-1 overflow-hidden"
+                                                                    onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setActivityTooltip({ text: log.resourceName, x: r.left, y: r.top - 4 }); }}
+                                                                    onMouseLeave={() => setActivityTooltip(null)}>
+                                                                    <span className="text-[8px] text-sky-500 font-black uppercase tracking-widest truncate px-1.5 py-0.5 bg-sky-50 rounded block">{log.resourceName}</span>
+                                                                </span>
+                                                                <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded flex-shrink-0 ${{ card: 'bg-purple-50 text-purple-600', stage: 'bg-orange-50 text-orange-500', vault: 'bg-yellow-50 text-yellow-600', doc: 'bg-green-50 text-green-600', folder: 'bg-pink-50 text-pink-600', api: 'bg-blue-50 text-blue-600' }[log.resourceType] || 'bg-gray-100 text-gray-500'}`}>{log.resourceType}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-[8px] text-gray-400 font-bold flex-shrink-0">{new Date(log.createdAt).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="p-3 border-t border-gray-200 bg-gray-100/50 rounded-b-[2rem]">
+                                        <p className="text-[8px] text-gray-400 font-black uppercase tracking-widest text-center">{allLogs.length} {t('labels.events') || 'events'}</p>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        {activityTooltip && (
+                            <div className="fixed z-[9999] bg-gray-800 text-white text-[8px] font-bold px-2 py-1 rounded shadow-lg whitespace-normal max-w-[220px] pointer-events-none" style={{ left: activityTooltip.x, top: activityTooltip.y, transform: 'translateY(-100%)' }}>
+                                {activityTooltip.text}
                             </div>
                         )}
                         <dnd.Droppable droppableId="all-columns" direction="horizontal" type="COLUMN">
@@ -1219,12 +1296,13 @@ User Request: ${aiInput}` : aiInput;
                                                     <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
                                                         <button onClick={() => { 
                                                             const nc = { columnId: col.id, title: t('labels.new_task'), urgency: 'LOW', assignees: [user?.email], auditEvent: { user: user?.email || 'System', action: 'Created card' } };
-                                                            fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); }); 
+                                                            fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); logActivity('Created card', 'card', nc.title); });
                                                         }} className={`p-1.5 rounded-lg transition ${colIconThemeClasses}`} title={t('actions.new_task')}><window.Icon name="plus-circle" size={18} /></button>
-                                                        {col.id !== 'todo' && <button onClick={() => showConfirm(t('actions.erase_stage'), t('alerts.confirm_erase_stage', {name: col.title}), async () => { 
+                                                        {col.id !== 'todo' && <button onClick={() => showConfirm(t('actions.erase_stage'), t('alerts.confirm_erase_stage', {name: col.title}), async () => {
                                                 const newCols = columns.filter(c => c.id !== col.id);
                                                 await fetch(`/api/workspaces/${workspace.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columns: newCols }) });
                                                 setColumns(newCols);
+                                                logActivity('Deleted stage', 'stage', col.title);
                                             })} className={`p-1.5 rounded-lg transition ${colIconThemeClasses}`} title={t('actions.erase_stage')}><window.Icon name="minus-circle" size={18} /></button>}
                                                     </div>
                                                 </div>
@@ -1236,7 +1314,7 @@ User Request: ${aiInput}` : aiInput;
                                                                     {(provided, snapshot) => (
                                                                         <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { openCard(card); } }} className={`bg-white text-gray-800 border border-gray-100 rounded-2xl p-4 insta-shadow hover:shadow-xl transition-all duration-300 cursor-pointer group relative ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-2xl z-50' : 'hover:scale-[1.02]'}`}>
                                             {lockedCards[card.id || card._id] && lockedCards[card.id || card._id] !== user?.email && <div className="absolute top-2 right-2 bg-red-100 text-red-600 rounded-full p-1.5 z-10 shadow-sm border border-white" title={`Locked by ${lockedCards[card.id || card._id]}`}><window.Icon name="lock" size={14}/></div>}
-<div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className={`w-16 h-2 rounded-full ${ {low: 'bg-blue-300', med: 'bg-yellow-400', high: 'bg-red-500', LOW: 'bg-blue-300', MED: 'bg-yellow-400', HIGH: 'bg-red-500'}[card.urgency?.toLowerCase() || 'low'] }`}></div>{card.qaStatus && card.qaStatus !== 'NONE' && (() => { const qa = { PENDING: { icon: 'clock', cls: 'bg-amber-100 text-amber-700 border-amber-200' }, PASSED: { icon: 'check-circle', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }, FAILED: { icon: 'x-circle', cls: 'bg-red-100 text-red-700 border-red-200' } }[card.qaStatus]; return qa ? <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${qa.cls}`} title={t(`labels.qa_${card.qaStatus.toLowerCase()}`)}><window.Icon name={qa.icon} size={10} />{t(`labels.qa_${card.qaStatus.toLowerCase()}`)}</div> : null; })()}</div><div className="opacity-0 group-hover:opacity-100 flex gap-2 transition" onClick={e => e.stopPropagation()}><button onClick={async (e) => { e.stopPropagation(); await fetch(`/api/tasks/${card.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: true, auditEvent: { user: user?.email || 'System', action: 'Archived card' } }) }); setCards(cards.map(c => c.id === card.id ? { ...c, archived: true } : c)); showToast(t('alerts.card_archived'), 'success'); }} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50" title={t('actions.archive')}><window.Icon name="archive" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, -1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-left" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, 1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-right" size={14}/></button></div></div>
+<div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className={`w-16 h-2 rounded-full ${ {low: 'bg-blue-300', med: 'bg-yellow-400', high: 'bg-red-500', LOW: 'bg-blue-300', MED: 'bg-yellow-400', HIGH: 'bg-red-500'}[card.urgency?.toLowerCase() || 'low'] }`}></div>{card.qaStatus && card.qaStatus !== 'NONE' && (() => { const qa = { PENDING: { icon: 'clock', cls: 'bg-amber-100 text-amber-700 border-amber-200' }, PASSED: { icon: 'check-circle', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }, FAILED: { icon: 'x-circle', cls: 'bg-red-100 text-red-700 border-red-200' } }[card.qaStatus]; return qa ? <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${qa.cls}`} title={t(`labels.qa_${card.qaStatus.toLowerCase()}`)}><window.Icon name={qa.icon} size={10} />{t(`labels.qa_${card.qaStatus.toLowerCase()}`)}</div> : null; })()}</div><div className="opacity-0 group-hover:opacity-100 flex gap-2 transition" onClick={e => e.stopPropagation()}><button onClick={async (e) => { e.stopPropagation(); await fetch(`/api/tasks/${card.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: true, auditEvent: { user: user?.email || 'System', action: 'Archived card' } }) }); setCards(cards.map(c => c.id === card.id ? { ...c, archived: true } : c)); showToast(t('alerts.card_archived'), 'success'); logActivity('Archived card', 'card', card.title); }} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50" title={t('actions.archive')}><window.Icon name="archive" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, -1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-left" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, 1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-right" size={14}/></button></div></div>
                                             {card.epic && <div className="inline-block px-2 py-0.5 bg-purple-100 text-purple-700 text-[8px] font-black uppercase tracking-widest rounded mb-2 shadow-sm border border-purple-200">{card.epic}</div>}
                                             <h4 className="font-black text-base leading-tight mb-3 tracking-tight">{card.title}</h4>
                                             {card.dueDate && <div className="inline-flex items-center gap-2.5 bg-red-50 text-red-500 px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest mb-3 border-2 border-red-100 shadow-lg shadow-red-100"><window.Icon name="calendar" size={14} /> {card.dueDate}</div>}
@@ -1284,7 +1362,7 @@ User Request: ${aiInput}` : aiInput;
                     </div>
                     </dnd.DragDropContext>
                 </main>
-            ) : tab === 'vault' ? <window.VaultTab workspace={workspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} /> : null}
+            ) : tab === 'vault' ? <window.VaultTab workspace={localWorkspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} onLogActivity={logActivity} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} onLogActivity={logActivity} /> : null}
             {editingCard && <window.CardModal card={editingCard} user={user} members={members} allUsers={allUsers} socket={socketRef.current} workspaceId={workspace.id || workspace._id} cardUrl={`${window.location.origin}${buildCardPath(workspace, editingCard.id || editingCard._id)}`} onClose={() => { setEditingCard(null); clearCardUrl(); }} onSave={async (upd) => { 
                 const cardId = editingCard.id || editingCard._id; 
                 const res = await fetch(`/api/tasks/${cardId}`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(upd) }); 
@@ -1302,9 +1380,10 @@ User Request: ${aiInput}` : aiInput;
                     cardsSnapshotRef.current = next;
                     return next;
                 }); 
+                logActivity('Updated card', 'card', editingCard.title);
                 setEditingCard(null); 
                 clearCardUrl();
-            }} onDelete={async (id) => { await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => { const next = (prev || []).filter(c => c && (c.id !== id && c._id !== id)); cardsSnapshotRef.current = next; return next; }); setEditingCard(null); clearCardUrl(); }} />}
+            }} onDelete={async (id) => { const deletedCard = (cards || []).find(c => c && (c.id === id || c._id === id)); await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => { const next = (prev || []).filter(c => c && (c.id !== id && c._id !== id)); cardsSnapshotRef.current = next; return next; }); setEditingCard(null); clearCardUrl(); logActivity('Deleted card', 'card', deletedCard?.title || 'Untitled card'); }} />}
             
             
             {/* Emoji Spam Animation */}
@@ -1462,7 +1541,7 @@ User Request: ${aiInput}` : aiInput;
                     cards.filter(c => c && c.columnId === viewArchivedCol && c.archived).map(c => (
                         <div key={c.id} className="flex justify-between items-center p-4 border border-gray-100 rounded-xl">
                             <div><p className="font-black text-sm">{c.title}</p></div>
-                            <button onClick={async () => { await fetch(`/api/tasks/${c.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: false, auditEvent: { user: user?.email || 'System', action: 'Restored card' } }) }); setCards(prev => prev.map(card => card.id === c.id ? { ...card, archived: false } : card)); }} className="text-blue-500 hover:text-blue-600 bg-blue-50 p-2 rounded-lg flex gap-2 items-center text-xs font-bold"><window.Icon name="upload-cloud" size={14}/> {t('actions.restore')}</button>
+                            <button onClick={async () => { await fetch(`/api/tasks/${c.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: false, auditEvent: { user: user?.email || 'System', action: 'Restored card' } }) }); setCards(prev => prev.map(card => card.id === c.id ? { ...card, archived: false } : card)); logActivity('Restored card', 'card', c.title); }} className="text-blue-500 hover:text-blue-600 bg-blue-50 p-2 rounded-lg flex gap-2 items-center text-xs font-bold"><window.Icon name="upload-cloud" size={14}/> {t('actions.restore')}</button>
                         </div>
                     ))}
                 </div>
