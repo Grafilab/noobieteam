@@ -37,7 +37,9 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String }, // Optional for Google OAuth users
   name: String,
+  avatar: String,
   avatarUrl: String,
+  homeBackgroundImage: String,
   method: { type: String, default: 'local' },
   vaultPin: { type: String }, // Hashed PIN for Google OAuth vault decryption
   lastLogin: { type: Date }
@@ -106,7 +108,13 @@ const taskSchema = new mongoose.Schema({
   }]
 }, { timestamps: true, optimisticConcurrency: true });
 
-userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    if (!ret.avatar && ret.avatarUrl) ret.avatar = ret.avatarUrl;
+    return ret;
+  }
+});
 workspaceSchema.set('toJSON', { virtuals: true });
 taskSchema.set('toJSON', { virtuals: true });
 
