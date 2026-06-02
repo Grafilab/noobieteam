@@ -595,7 +595,7 @@ window.Main = () => {
         return result;
     }, [translations]);
 
-    const showToast = (message) => { const id = window.generateId('tst'); setToasts(prev => [...prev, { id, message }]); };
+    const showToast = (message, type = 'info') => { const id = window.generateId('tst'); setToasts(prev => [...prev, { id, message, type }]); };
     const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
 
     const setUrl = (newUrl) => {
@@ -643,7 +643,7 @@ window.Main = () => {
                  !ws ? <window.WorkspaceHub user={user} onLogout={() => { setShowProfile(false); setUser(null); showToast("Session ended. 👋"); }} onSelect={selectWorkspace} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} urlWsSlug={urlWsSlug} /> :
                  <window.WorkspaceView workspace={ws} onBack={() => { window.history.pushState({}, '', '/'); setWs(null); }} user={user} onLogout={() => { setShowProfile(false); setWs(null); setUser(null); showToast(t('alerts.session_ended') || "Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} isJukeboxActive={!!player.url && !player.isMinimized} />}
                 <window.FloatingJukebox />
-                <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} onRemove={() => removeToast(t.id)} />)}</div>
+                <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} type={t.type} onRemove={() => removeToast(t.id)} />)}</div>
                 {modalState.isOpen && (
                     
                     <window.GlobalModal isOpen={true} onClose={() => setModalState(prev => ({...prev, isOpen: false}))} title={modalState.title} footer={
