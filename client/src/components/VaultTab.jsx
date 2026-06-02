@@ -1,4 +1,4 @@
-window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
+window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser, onLogActivity }) {
 
     
     const { showPrompt, showAlert, showConfirm } = window.useModals();
@@ -21,7 +21,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             const updatedSecrets = secrets.concat([{ id: window.generateId('sec'), service: newSecret.service, url: newSecret.url, value: encrypted }]);
             
             await onUpdate({ secrets: updatedSecrets });
-            
+            onLogActivity?.('Added secret', 'vault', newSecret.service);
             setSecrets(updatedSecrets);
             setNewSecret({ service: '', account: '', password: '', url: '' });
             setIsAdding(false);
@@ -122,8 +122,10 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
 
     const deleteSecret = async (id) => {
         showConfirm(t('actions.delete_mission'), t('actions.erase_completely'), async () => {
+            const target = secrets.find(s => s.id === id || s._id === id);
             const updated = secrets.filter(s => (s.id !== id && s._id !== id));
             await onUpdate({ secrets: updated });
+            onLogActivity?.('Deleted secret', 'vault', target?.service);
             setSecrets(updated);
             showToast(t('alerts.secret_purged'));
         });
