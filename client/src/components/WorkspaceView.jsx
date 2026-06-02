@@ -1148,11 +1148,25 @@ User Request: ${aiInput}` : aiInput;
                 <div className="flex gap-2">
                     <button onClick={() => { setIsBitbucketSettingsOpen(false); setPendingBranchAction(null); }} className="bg-gray-100 text-gray-700 px-8 py-3 rounded-full text-[9px] font-black uppercase tracking-widest">{t('actions.cancel')}</button>
                     <button onClick={async () => {
+                        const repoTrim = bitbucketRepo.trim();
+                        const emailTrim = bitbucketAuthEmail.trim();
+                        if (!repoTrim) {
+                            showToast(t('alerts.bitbucket_repo_required') || 'Bitbucket repository is not configured for this workspace. Please enter a value like "workspace/repo-slug".', 'error');
+                            return;
+                        }
+                        if (!/^[^\s/]+\/[^\s/]+$/.test(repoTrim)) {
+                            showToast(t('alerts.bitbucket_repo_invalid') || 'Repository must be in the format "workspace/repo-slug".', 'error');
+                            return;
+                        }
+                        if (pendingBranchAction && (!emailTrim || (!workspace.bitbucketApiTokenSet && bitbucketApiTokenPlain.length === 0))) {
+                            showToast(t('alerts.bitbucket_credentials_required') || 'Bitbucket API credentials are not configured for this workspace. Enter email and API token to create branches.', 'error');
+                            return;
+                        }
                         const payload = {
-                            bitbucketRepo: bitbucketRepo.trim(),
+                            bitbucketRepo: repoTrim,
                             bitbucketBranchPrefix: bitbucketBranchPrefix.trim() || 'feature/',
                             bitbucketDefaultBranch: bitbucketDefaultBranch.trim() || 'main',
-                            bitbucketAuthEmail: bitbucketAuthEmail.trim()
+                            bitbucketAuthEmail: emailTrim
                         };
                         if (bitbucketApiTokenPlain.length > 0) {
                             payload.bitbucketApiTokenPlain = bitbucketApiTokenPlain;

@@ -120,8 +120,10 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
     const [bitbucketBranch, setBitbucketBranch] = React.useState(card.bitbucketBranch || null);
     const cardCreator = card.createdBy || card.auditTrail?.[0]?.user;
     const isCardCreator = !!(user?.email && cardCreator === user.email);
-    const canCreateBranch = !!(workspace && isCardCreator && !bitbucketBranch?.name);
-    const canUnbindBranch = !!(bitbucketBranch?.name && isCardCreator);
+    const isAssignee = !!(user?.email && Array.isArray(assignees) && assignees.includes(user.email));
+    const canManageBranch = isCardCreator || isAssignee;
+    const canCreateBranch = !!(workspace && canManageBranch && !bitbucketBranch?.name);
+    const canUnbindBranch = !!(bitbucketBranch?.name && canManageBranch);
 
     const persistBranchPatch = async (patch, action) => {
         const cardId = card.id || card._id;
