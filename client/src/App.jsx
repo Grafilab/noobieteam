@@ -240,8 +240,54 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
     const [showTestPanel, setShowTestPanel] = React.useState(false);
     const [showMobileSidebar, setShowMobileSidebar] = React.useState(false);
     const [activeEnvId, setActiveEnvId] = React.useState('');
-    
-    
+    const [passwordRequired, setPasswordRequired] = React.useState(false);
+    const [passwordInput, setPasswordInput] = React.useState('');
+    const [passwordError, setPasswordError] = React.useState(null);
+    const [verifying, setVerifying] = React.useState(false);
+    const passwordCacheKey = `nt_docpw_${wsPath}_${folderName}`;
+
+    const applyDocsPayload = (data) => {
+        setWorkspace(data.workspace);
+        setFolder(data.folder);
+        setSubfolders(data.subfolders || []);
+        setDocs(data.docs);
+        if (data.folder) {
+            setSelectedFolderId(data.folder.id || data.folder._id);
+        }
+        setPasswordRequired(false);
+    };
+
+    const submitPassword = async (pw) => {
+        const password = (pw !== undefined ? pw : passwordInput).trim();
+        if (!password) { setPasswordError('Enter the password to continue.'); return; }
+        setVerifying(true);
+        setPasswordError(null);
+        try {
+            const res = await fetch(`/api/public/docs/${wsPath}/${folderName}/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            if (res.status === 401) {
+                setPasswordError('Incorrect password.');
+                try { sessionStorage.removeItem(passwordCacheKey); } catch (e) {}
+                return;
+            }
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                setPasswordError(err.error || 'Could not unlock these docs.');
+                return;
+            }
+            const data = await res.json();
+            try { sessionStorage.setItem(passwordCacheKey, password); } catch (e) {}
+            applyDocsPayload(data);
+        } catch (err) {
+            setPasswordError(err.message || 'Network error.');
+        } finally {
+            setVerifying(false);
+        }
+    };
+
     const handleTestApi = async (spec, activeDocFolderId) => {
         setTestLoading(true);
         setTestResponse(null);
@@ -317,14 +363,19 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                 if (!r.ok) throw new Error("Documentation not found or access denied.");
                 return r.json();
             })
-            .then(data => {
-                setWorkspace(data.workspace);
-                setFolder(data.folder);
-                setSubfolders(data.subfolders || []);
-                setDocs(data.docs);
-                if (data.folder) {
-                    setSelectedFolderId(data.folder.id || data.folder._id);
+            .then(async data => {
+                if (data.passwordRequired) {
+                    setWorkspace(data.workspace);
+                    setFolder(data.folder);
+                    setPasswordRequired(true);
+                    let cached = null;
+                    try { cached = sessionStorage.getItem(passwordCacheKey); } catch (e) {}
+                    if (cached) {
+                        await submitPassword(cached);
+                    }
+                    return;
                 }
+                applyDocsPayload(data);
             })
             .catch(err => setError(err.message))
             .finally(() => setLoading(false));
@@ -332,6 +383,47 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
 
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-500 font-bold">Loading API Documentation...</div>;
     if (error) return <div className="min-h-screen flex items-center justify-center bg-red-50 text-red-500 font-black">{error}</div>;
+    if (passwordRequired) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
+                <form
+                    onSubmit={(e) => { e.preventDefault(); submitPassword(); }}
+                    className="w-full max-w-md bg-white p-10 rounded-[2rem] shadow-2xl border border-gray-100"
+                >
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-500">
+                            <window.Icon name="lock" size={20} />
+                        </div>
+                        <div>
+                            <h1 className="text-xl font-black tracking-tight">{folder?.name || 'Protected Docs'}</h1>
+                            <p className="text-xs text-gray-500 font-bold">{workspace?.name || ''}</p>
+                        </div>
+                    </div>
+                    <p className="text-xs text-gray-600 leading-relaxed mb-6">
+                        These documents are password-protected. Enter the password shared with you to continue.
+                    </p>
+                    <input
+                        type="password"
+                        autoFocus
+                        value={passwordInput}
+                        onChange={(e) => { setPasswordInput(e.target.value); if (passwordError) setPasswordError(null); }}
+                        placeholder="Password"
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500 transition"
+                    />
+                    {passwordError && (
+                        <div className="mt-3 text-xs font-bold text-red-500">{passwordError}</div>
+                    )}
+                    <button
+                        type="submit"
+                        disabled={verifying}
+                        className="mt-6 w-full px-6 py-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-gray-800 active:scale-95 transition disabled:opacity-50"
+                    >
+                        {verifying ? 'Unlocking…' : 'Unlock Docs'}
+                    </button>
+                </form>
+            </div>
+        );
+    }
 
     const activeDoc = selectedDocId ? docs.find(d => (d.id === selectedDocId || d._id === selectedDocId)) : null;
     const activeFolder = selectedFolderId && !selectedDocId ? (folder?.id === selectedFolderId || folder?._id === selectedFolderId ? folder : subfolders.find(f => (f.id === selectedFolderId || f._id === selectedFolderId))) : null;

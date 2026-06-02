@@ -151,9 +151,18 @@ const folderSchema = new mongoose.Schema({
     id: String,
     name: String,
     baseUrl: String
-  }]
+  }],
+  isPasswordProtected: { type: Boolean, default: false },
+  passwordHash: { type: String, select: false }
 }, { timestamps: true });
-folderSchema.set('toJSON', { virtuals: true });
+
+folderSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    if (ret.passwordHash) delete ret.passwordHash;
+    return ret;
+  }
+});
 const Folder = mongoose.model('Folder', folderSchema);
 
 
