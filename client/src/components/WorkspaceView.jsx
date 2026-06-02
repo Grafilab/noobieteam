@@ -15,16 +15,26 @@ function readWorkspaceNotificationsSession(workspaceId) {
 }
 
 /** Saves one entry and returns the updated list (newest first, max 50). */
-function pushWorkspaceNotificationSession(workspaceId, message) {
+function pushWorkspaceNotificationSession(workspaceId, message, options = {}) {
+    if (!workspaceId || !message) return readWorkspaceNotificationsSession(workspaceId);
     const prev = readWorkspaceNotificationsSession(workspaceId);
+    if (options.dedupeKey && prev.some((n) => n && n.dedupeKey === options.dedupeKey)) {
+        return prev;
+    }
     const entry = {
         id: window.generateId ? window.generateId('ntf') : `ntf-${Date.now()}`,
         message,
         createdAt: Date.now(),
+        workspaceId,
+        workspaceName: options.workspaceName || '',
+        type: options.type || 'activity',
+        cardId: options.cardId || '',
+        dedupeKey: options.dedupeKey || '',
     };
     const next = [entry, ...prev].slice(0, 50);
     try {
         sessionStorage.setItem(ntWorkspaceNotificationsKey(workspaceId), JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
     } catch (_) {}
     return next;
 }
@@ -34,6 +44,7 @@ function removeWorkspaceNotificationSession(workspaceId, notificationId) {
     const next = prev.filter((n) => n && n.id !== notificationId);
     try {
         sessionStorage.setItem(ntWorkspaceNotificationsKey(workspaceId), JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
     } catch (_) {}
     return next;
 }
@@ -41,9 +52,84 @@ function removeWorkspaceNotificationSession(workspaceId, notificationId) {
 function clearWorkspaceNotificationsSession(workspaceId) {
     try {
         sessionStorage.removeItem(ntWorkspaceNotificationsKey(workspaceId));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
     } catch (_) {}
     return [];
 }
+
+function readAllWorkspaceNotificationsSession() {
+    const all = [];
+    try {
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+            const key = sessionStorage.key(i);
+            if (!key || !key.startsWith('nt_ws_notifications_')) continue;
+            const workspaceId = key.replace('nt_ws_notifications_', '');
+            readWorkspaceNotificationsSession(workspaceId).forEach((n) => {
+                if (n) all.push({ ...n, workspaceId: n.workspaceId || workspaceId });
+            });
+        }
+    } catch (_) {}
+    return all.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function removeAnyWorkspaceNotificationSession(notification) {
+    if (!notification || !notification.workspaceId) return readAllWorkspaceNotificationsSession();
+    removeWorkspaceNotificationSession(notification.workspaceId, notification.id);
+    return readAllWorkspaceNotificationsSession();
+}
+
+function clearAllWorkspaceNotificationsSession() {
+    try {
+        const keys = [];
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+            const key = sessionStorage.key(i);
+            if (key && key.startsWith('nt_ws_notifications_')) keys.push(key);
+        }
+        keys.forEach((key) => sessionStorage.removeItem(key));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
+    } catch (_) {}
+    return [];
+}
+
+function getTaskLastActor(task) {
+    const trail = Array.isArray(task?.auditTrail) ? task.auditTrail : [];
+    const latest = trail[trail.length - 1];
+    return latest?.user || '';
+}
+
+function getTaskLastAuditTimestamp(task) {
+    const trail = Array.isArray(task?.auditTrail) ? task.auditTrail : [];
+    const latest = trail[trail.length - 1];
+    return latest?.timestamp || task?.updatedAt || '';
+}
+
+function isUserInvolvedInCard(card, email) {
+    return !!email && Array.isArray(card?.assignees) && card.assignees.includes(email);
+}
+
+function isCardDueSoon(card) {
+    if (!card || card.archived || !card.dueDate) return false;
+    const due = new Date(card.dueDate);
+    if (Number.isNaN(due.getTime())) return false;
+    const diffDays = (due - new Date()) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= 3;
+}
+
+function formatStatusName(columns, columnId) {
+    const col = (columns || []).find((c) => c && c.id === columnId);
+    return col?.title || columnId || 'Unknown';
+}
+
+function getCommentId(comment, index) {
+    return comment?._id || comment?.id || `${comment?.authorEmail || 'unknown'}:${comment?.timestamp || index}`;
+}
+
+window.NTNotifications = {
+    readAll: readAllWorkspaceNotificationsSession,
+    push: pushWorkspaceNotificationSession,
+    remove: removeAnyWorkspaceNotificationSession,
+    clearAll: clearAllWorkspaceNotificationsSession,
+};
 
 /**
  * One string id for this workspace (API + sessionStorage). Prefers `id`, then `_id`, handling ObjectId-like objects.
@@ -132,10 +218,118 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         setSessionNotifications(readWorkspaceNotificationsForWorkspace(workspace));
     }, [wsNotificationStorageId]);
 
-    /** Avoid duplicate welcome toast per workspace session; safe when switching workspaces (no stale state). */
-    const welcomeNotifiedWorkspaceRef = React.useRef(null);
+    React.useEffect(() => {
+        const refreshNotifications = () => setSessionNotifications(readWorkspaceNotificationsForWorkspace(workspace));
+        window.addEventListener('nt:notifications-changed', refreshNotifications);
+        return () => window.removeEventListener('nt:notifications-changed', refreshNotifications);
+    }, [workspace, wsNotificationStorageId]);
+
     /** Ignores stale task-fetch results after the user switches to another workspace. */
     const workspaceFetchScopeRef = React.useRef('');
+    const cardsSnapshotRef = React.useRef([]);
+
+    const addWorkspaceNotification = React.useCallback((message, options = {}) => {
+        setSessionNotifications(pushWorkspaceNotificationSession(wsNotificationStorageId, message, {
+            ...options,
+            workspaceName: workspace?.name || options.workspaceName || '',
+        }));
+    }, [workspace?.name, wsNotificationStorageId]);
+
+    const emitCardMoveNotification = React.useCallback((card, targetColumnId, movedTask = {}) => {
+        const recipients = Array.isArray(card?.assignees) ? card.assignees.filter(Boolean) : [];
+        const cardId = String(card?.id || card?._id || movedTask?.id || movedTask?._id || '');
+        if (!socketRef.current || !wsNotificationStorageId || !cardId || recipients.length === 0) return;
+        const statusName = formatStatusName(columns, targetColumnId);
+        const eventStamp = getTaskLastAuditTimestamp(movedTask) || movedTask?.updatedAt || Date.now();
+        socketRef.current.emit('notification:workspace', {
+            workspaceId: wsNotificationStorageId,
+            workspaceName: workspace?.name || '',
+            recipients,
+            senderEmail: user?.email || '',
+            message: `"${card?.title || movedTask?.title || 'Untitled card'}" moved to ${statusName}.`,
+            type: 'status',
+            cardId,
+            dedupeKey: `moved:${cardId}:${targetColumnId}:${eventStamp}`,
+        });
+    }, [columns, user?.email, workspace?.name, wsNotificationStorageId]);
+
+    const scanTaskNotifications = React.useCallback((nextCards, previousCards = [], { initial = false } = {}) => {
+        if (!user?.email || !wsNotificationStorageId) return;
+        const previousById = new Map((previousCards || []).filter(c => c && (c.id || c._id)).map(c => [String(c.id || c._id), c]));
+        const nextById = new Map((nextCards || []).filter(c => c && (c.id || c._id)).map(c => [String(c.id || c._id), c]));
+        const actorIsCurrentUser = (card) => getTaskLastActor(card) === user.email;
+
+        nextById.forEach((card, cardId) => {
+            const prev = previousById.get(cardId);
+            const title = card.title || 'Untitled card';
+
+            if (isUserInvolvedInCard(card, user.email) && isCardDueSoon(card)) {
+                const dueLabel = new Date(card.dueDate).toLocaleDateString();
+                addWorkspaceNotification(`"${title}" is expiring soon (${dueLabel}).`, {
+                    type: 'due-soon',
+                    cardId,
+                    dedupeKey: `due-soon:${cardId}:${dueLabel}`,
+                });
+            }
+
+            const prevInvolved = isUserInvolvedInCard(prev, user.email);
+            const nextInvolved = isUserInvolvedInCard(card, user.email);
+            const actor = getTaskLastActor(card) || 'Someone';
+
+            if (initial) return;
+
+            const comments = Array.isArray(card.comments) ? card.comments : [];
+            const previousCommentIds = new Set((Array.isArray(prev?.comments) ? prev.comments : []).map(getCommentId));
+            comments.forEach((comment, index) => {
+                const commentId = getCommentId(comment, index);
+                if (!Array.isArray(comment?.taggedUsers) || !comment.taggedUsers.includes(user.email)) return;
+                if (comment.authorEmail === user.email) return;
+                if (prev && previousCommentIds.has(commentId)) return;
+                addWorkspaceNotification(`${comment.authorEmail || 'Someone'} mentioned you in "${title}".`, {
+                    type: 'mention',
+                    cardId,
+                    dedupeKey: `mention:${cardId}:${commentId}`,
+                });
+            });
+
+            if (!prevInvolved && nextInvolved && !actorIsCurrentUser(card)) {
+                addWorkspaceNotification(`${actor} added you to "${title}".`, {
+                    type: 'assigned',
+                    cardId,
+                    dedupeKey: `assigned:${cardId}:${card.updatedAt || Date.now()}`,
+                });
+            }
+
+            if (!prev) return;
+
+            if (nextInvolved && !actorIsCurrentUser(card) && (prev.columnId || prev.col) !== (card.columnId || card.col)) {
+                addWorkspaceNotification(`"${title}" moved to ${formatStatusName(columns, card.columnId || card.col)}.`, {
+                    type: 'status',
+                    cardId,
+                    dedupeKey: `moved:${cardId}:${card.columnId || card.col}:${getTaskLastAuditTimestamp(card) || Date.now()}`,
+                });
+            }
+
+            if (prevInvolved && !prev.archived && card.archived && !actorIsCurrentUser(card)) {
+                addWorkspaceNotification(`"${title}" was archived.`, {
+                    type: 'archived',
+                    cardId,
+                    dedupeKey: `archived:${cardId}:${card.updatedAt || Date.now()}`,
+                });
+            }
+        });
+
+        if (!initial) {
+            previousById.forEach((prev, cardId) => {
+                if (nextById.has(cardId) || !isUserInvolvedInCard(prev, user.email)) return;
+                addWorkspaceNotification(`"${prev.title || 'Untitled card'}" was deleted.`, {
+                    type: 'deleted',
+                    cardId,
+                    dedupeKey: `deleted:${cardId}:${Date.now()}`,
+                });
+            });
+        }
+    }, [addWorkspaceNotification, columns, user?.email, wsNotificationStorageId]);
 
     React.useEffect(() => {
         const fetchScopeId = getWorkspaceCanonicalId(workspace);
@@ -162,29 +356,8 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
                 setShowExpiredModal(true);
                 setSelectedMoveCol(columns[0]?.id || 'todo');
             }
-            
-            const widForWelcome = fetchScopeId;
-            if (user?.email && widForWelcome && welcomeNotifiedWorkspaceRef.current !== widForWelcome) {
-                welcomeNotifiedWorkspaceRef.current = widForWelcome;
-                const myCards = validData.filter(c => c && !c.archived && c.assignees && c.assignees.includes(user.email));
-                const expiringCount = myCards.filter(c => {
-                    if (!c.dueDate) return false;
-                    const due = new Date(c.dueDate);
-                    const diffDays = (due - now) / (1000 * 60 * 60 * 24);
-                    return diffDays >= 0 && diffDays <= 3;
-                }).length;
-                const backlogCount = myCards.filter(c => c.columnId === 'backlog' || c.col === 'backlog').length;
-
-                const welcomeMsg =
-                    t('alerts.welcome_stats', {
-                        total: myCards.length,
-                        expiring: expiringCount,
-                        backlog: backlogCount,
-                    }) ||
-                    `Workspace loaded: You have ${myCards.length} assigned cards (${expiringCount} expiring soon, ${backlogCount} in backlog).`;
-                showToast(welcomeMsg);
-                setSessionNotifications(pushWorkspaceNotificationSession(widForWelcome, welcomeMsg));
-            }
+            scanTaskNotifications(validData, cardsSnapshotRef.current, { initial: true });
+            cardsSnapshotRef.current = validData;
         }).catch(console.error);
         fetch('/api/users')
             .then((r) => r.json())
@@ -236,7 +409,30 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         // Start polling loop
         const interval = setInterval(fetchUnseenEmojis, 10000);
         return () => clearInterval(interval);
-    }, [wsNotificationStorageId, user]);
+    }, [wsNotificationStorageId, user, scanTaskNotifications]);
+
+    React.useEffect(() => {
+        if (!wsNotificationStorageId || !workspace?.id) return;
+        let cancelled = false;
+        const pollTasks = async () => {
+            try {
+                const res = await fetch(`/api/workspaces/${workspace.id}/tasks`);
+                const data = await res.json();
+                if (cancelled || workspaceFetchScopeRef.current !== wsNotificationStorageId) return;
+                const validData = Array.isArray(data) ? data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)) : [];
+                scanTaskNotifications(validData, cardsSnapshotRef.current, { initial: false });
+                cardsSnapshotRef.current = validData;
+                setCards(validData);
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        const interval = setInterval(pollTasks, 15000);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [scanTaskNotifications, workspace?.id, wsNotificationStorageId]);
 
     const [editingCard, setEditingCard] = React.useState(null);
     const [urlCardId, setUrlCardId] = React.useState(() => getCardIdFromPath());
@@ -268,9 +464,21 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         const backendUrl = window.location.origin.includes('task.zettalog.com') ? 'https://task.zettalog.com' : window.location.origin;
         const socket = window.io(backendUrl, { path: '/api/socket.io' });
         socketRef.current = socket;
+        const joinedWorkspaceId = getWorkspaceCanonicalId(workspace) || workspace.id || workspace._id;
+        socket.emit('workspace:join', { workspaceId: joinedWorkspaceId });
         
         socket.on('card:locked', ({ cardId, user }) => {
             setLockedCards(prev => Object.assign({}, prev, { [cardId]: user }));
+        });
+
+        socket.on('notification:card', (notification) => {
+            if (!notification || !Array.isArray(notification.recipients) || !notification.recipients.includes(user?.email)) return;
+            addWorkspaceNotification(notification.message, {
+                type: notification.type,
+                cardId: notification.cardId,
+                dedupeKey: notification.dedupeKey,
+                workspaceName: notification.workspaceName,
+            });
         });
         
         socket.on('card:unlocked', ({ cardId }) => {
@@ -296,7 +504,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         return () => {
             socket.disconnect();
         };
-    }, [workspace.id]);
+    }, [addWorkspaceNotification, user?.email, workspace]);
     const [showBacklog, setShowBacklog] = React.useState(false);
     
     // Safety check for Drag and Drop library
@@ -462,8 +670,11 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         const nextIdx = colIdx + direction;
         if (nextIdx >= 0 && nextIdx < columns.length) {
             const nextColId = columns[nextIdx].id;
-            await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: nextColId, col: nextColId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + nextColId } }) });
-            setCards(prev => prev.map(c => c.id === id ? { ...c, columnId: nextColId, col: nextColId } : c));
+            const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: nextColId, col: nextColId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + nextColId } }) });
+            const movedTask = await res.json().catch(() => null);
+            if (!res.ok) return;
+            emitCardMoveNotification(card, nextColId, movedTask || {});
+            setCards(prev => prev.map(c => c.id === id ? { ...(movedTask || c), id: c.id || movedTask?.id || movedTask?._id, columnId: nextColId, col: nextColId } : c));
         }
     };
 
@@ -916,7 +1127,7 @@ User Request: ${aiInput}` : aiInput;
                                 }
 
                                 const newCards = [...cards];
-                                const draggedIdx = newCards.findIndex(c => c.id === draggableId);
+                                const draggedIdx = newCards.findIndex(c => String(c.id || c._id) === String(draggableId));
                                 if (draggedIdx === -1) return;
                                 
                                 const draggedCard = { ...newCards[draggedIdx], columnId: destination.droppableId };
@@ -927,8 +1138,8 @@ User Request: ${aiInput}` : aiInput;
                                 if (destination.index >= destColCards.length) {
                                     newCards.push(draggedCard);
                                 } else {
-                                    const anchorCardId = destColCards[destination.index].id;
-                                    const globalInsertIdx = newCards.findIndex(c => c.id === anchorCardId);
+                                    const anchorCardId = destColCards[destination.index].id || destColCards[destination.index]._id;
+                                    const globalInsertIdx = newCards.findIndex(c => String(c.id || c._id) === String(anchorCardId));
                                     newCards.splice(globalInsertIdx, 0, draggedCard);
                                 }
                                 
@@ -940,7 +1151,9 @@ User Request: ${aiInput}` : aiInput;
                                 });
                                 
                                 setCards(newCards);
-                                await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
+                                const moveRes = await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
+                                const movedTask = await moveRes.json().catch(() => null);
+                                if (moveRes.ok) emitCardMoveNotification(draggedCard, destination.droppableId, movedTask || {});
                                 await fetch(`/api/workspaces/${workspace.id || workspace._id}/tasks/bulk-order`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ updates: bulkUpdates }) });
                             }}>
                             <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden h-full w-full">
@@ -1071,10 +1284,14 @@ User Request: ${aiInput}` : aiInput;
                     }
                     return;
                 }
-                setCards(prev => (prev || []).map(c => (c && (c.id === cardId || c._id === cardId)) ? updatedTask : c)); 
+                setCards(prev => {
+                    const next = (prev || []).map(c => (c && (c.id === cardId || c._id === cardId)) ? updatedTask : c);
+                    cardsSnapshotRef.current = next;
+                    return next;
+                }); 
                 setEditingCard(null); 
                 clearCardUrl();
-            }} onDelete={async (id) => { await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => (prev || []).filter(c => c && (c.id !== id && c._id !== id))); setEditingCard(null); clearCardUrl(); }} />}
+            }} onDelete={async (id) => { await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => { const next = (prev || []).filter(c => c && (c.id !== id && c._id !== id)); cardsSnapshotRef.current = next; return next; }); setEditingCard(null); clearCardUrl(); }} />}
             
             
             {/* Emoji Spam Animation */}
