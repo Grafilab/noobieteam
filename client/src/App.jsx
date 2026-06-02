@@ -622,6 +622,14 @@ window.Main = () => {
         publicWsPath = parts[2];
         publicFolderName = parts[3];
     }
+
+    const selectWorkspace = (selectedWs) => {
+        const wsRoute = '/workspace/' + (selectedWs.slug || selectedWs.id || selectedWs._id);
+        if (!(window.location.pathname === wsRoute || window.location.pathname.startsWith(wsRoute + '/'))) {
+            window.history.pushState({}, '', wsRoute);
+        }
+        setWs(selectedWs);
+    };
     
     return (
         <ErrorBoundary>
@@ -632,7 +640,7 @@ window.Main = () => {
                 {isPublicDocs ? <window.PublicDocsView wsPath={publicWsPath} folderName={publicFolderName} /> :
                 !user ? <window.AuthScreen onAuthSuccess={setUser} /> :
                 showProfile ? <window.ProfilePage user={user} onBack={() => setShowProfile(false)} onUpdateUser={setUser} theme={theme} /> :
-                 !ws ? <window.WorkspaceHub user={user} onLogout={() => { setShowProfile(false); setUser(null); showToast("Session ended. 👋"); }} onSelect={(selectedWs) => { window.history.pushState({}, '', '/workspace/' + (selectedWs.slug || selectedWs.id || selectedWs._id)); setWs(selectedWs); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} urlWsSlug={urlWsSlug} /> :
+                 !ws ? <window.WorkspaceHub user={user} onLogout={() => { setShowProfile(false); setUser(null); showToast("Session ended. 👋"); }} onSelect={selectWorkspace} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} urlWsSlug={urlWsSlug} /> :
                  <window.WorkspaceView workspace={ws} onBack={() => { window.history.pushState({}, '', '/'); setWs(null); }} user={user} onLogout={() => { setShowProfile(false); setWs(null); setUser(null); showToast(t('alerts.session_ended') || "Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} isJukeboxActive={!!player.url && !player.isMinimized} />}
                 <window.FloatingJukebox />
                 <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} onRemove={() => removeToast(t.id)} />)}</div>
