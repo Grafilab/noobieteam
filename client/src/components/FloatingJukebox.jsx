@@ -9,6 +9,8 @@
     const DRAG_THRESHOLD_SQ = 36;
     const SNAP_MS = 520;
     const SNAP_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+    const HISTORY_KEY = 'nt_jukebox_history';
+    const HISTORY_LIMIT = 8;
 
     /**
      * Returns the top-left position that docks this rectangle to the nearest viewport edge
@@ -67,6 +69,23 @@
         return null;
     }
 
+    /** Loads recent audio URLs from localStorage. */
+    function readStoredHistory() {
+        try {
+            const raw = localStorage.getItem(HISTORY_KEY);
+            const parsed = raw ? JSON.parse(raw) : [];
+            return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string' && item.trim()).slice(0, HISTORY_LIMIT) : [];
+        } catch (_) {
+            return [];
+        }
+    }
+
+    function writeStoredHistory(items) {
+        try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(items));
+        } catch (_) {}
+    }
+
     /** Default placement: bottom-right for a typical maximized jukebox size. */
     function defaultBottomRight() {
         const w = 56;
@@ -78,10 +97,26 @@
         const { url, isMinimized, setUrl, setMinimized } = window.useJukebox();
         const { t } = window.useTranslation ? window.useTranslation() : { t: (k) => k };
         const [input, setInput] = React.useState('');
+        const [history, setHistory] = React.useState(readStoredHistory);
         const vId = window.extractYoutubeId(url);
         const pId = window.extractPlaylistId(url);
+        const youtubeEmbedUrl = pId
+            ? `https://www.youtube.com/embed/${vId || 'videoseries'}?enablejsapi=1&list=${encodeURIComponent(pId)}&origin=${encodeURIComponent(window.location.origin)}`
+            : vId
+                ? `https://www.youtube.com/embed/${encodeURIComponent(vId)}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`
+                : '';
+        const spotifyPlaylistId = window.extractSpotifyPlaylistId(url);
+        const spotifyEmbedUrl = spotifyPlaylistId
+            ? `https://open.spotify.com/embed/playlist/${encodeURIComponent(spotifyPlaylistId)}?utm_source=generator`
+            : '';
+        const isYoutubePlayable = !!(pId || vId);
+        const isSpotifyPlayable = !!spotifyPlaylistId;
+        const playerProvider = isYoutubePlayable ? 'youtube' : isSpotifyPlayable ? 'spotify' : 'invalid';
+        const playerSrc = isYoutubePlayable ? youtubeEmbedUrl : isSpotifyPlayable ? spotifyEmbedUrl : '';
+        const playerKey = `${playerProvider}:${playerSrc}`;
 
         const rootRef = React.useRef(null);
+        const playerFrameRef = React.useRef(null);
         const snapTargetRef = React.useRef(null);
         const snapRafIdsRef = React.useRef([]);
         const snapFlyBackupRef = React.useRef(null);
@@ -90,10 +125,16 @@
         const [pos, setPos] = React.useState(() => readStoredPos() || defaultBottomRight());
         const [isDragging, setIsDragging] = React.useState(false);
         const [snapFlying, setSnapFlying] = React.useState(false);
+        const [isPaused, setIsPaused] = React.useState(false);
 
         React.useEffect(() => {
             snapFlyingRef.current = snapFlying;
         }, [snapFlying]);
+
+        React.useEffect(() => {
+            if (url) setInput(url);
+            setIsPaused(true);
+        }, [url]);
 
         /**
          * Minimize without the “collapse to top-left” illusion: place the 56×56 circle so its center
@@ -314,8 +355,188 @@
         }, [cancelSnapFly]);
 
         
+        const playUrl = React.useCallback(
+            (nextUrl) => {
+                const cleanUrl = nextUrl.trim();
+                if (!cleanUrl) return;
+                setInput(cleanUrl);
+                setUrl(cleanUrl);
+                setHistory((prev) => {
+                    const next = [cleanUrl, ...prev.filter((item) => item !== cleanUrl)].slice(0, HISTORY_LIMIT);
+                    writeStoredHistory(next);
+                    return next;
+                });
+            },
+            [setUrl]
+        );
+
+        const submitInput = React.useCallback(() => {
+            playUrl(input);
+        }, [input, playUrl]);
+
+        const sendYoutubeCommand = React.useCallback((func) => {
+            const frame = playerFrameRef.current;
+            if (!frame?.contentWindow) return;
+            frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), 'https://www.youtube.com');
+        }, []);
+
+        const syncYoutubePlayerState = React.useCallback(() => {
+            const frame = playerFrameRef.current;
+            if (!isYoutubePlayable || !frame?.contentWindow) return;
+            frame.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: playerKey }), 'https://www.youtube.com');
+            frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'getPlayerState', args: [] }), 'https://www.youtube.com');
+        }, [isYoutubePlayable, playerKey]);
+
+        const togglePlayback = React.useCallback(() => {
+            setIsPaused((prevPaused) => {
+                const nextPaused = !prevPaused;
+                if (isYoutubePlayable) {
+                    sendYoutubeCommand(nextPaused ? 'pauseVideo' : 'playVideo');
+                } else if (isSpotifyPlayable) {
+                    const frame = playerFrameRef.current;
+                    frame?.contentWindow?.postMessage({ command: nextPaused ? 'pause' : 'play' }, 'https://open.spotify.com');
+                }
+                return nextPaused;
+            });
+        }, [isSpotifyPlayable, isYoutubePlayable, sendYoutubeCommand]);
+
+        React.useEffect(() => {
+            const parseMessageData = (data) => {
+                if (typeof data !== 'string') return data;
+                try {
+                    return JSON.parse(data);
+                } catch (_) {
+                    return null;
+                }
+            };
+
+            const onMessage = (event) => {
+                const data = parseMessageData(event.data);
+                if (!data) return;
+                let originHost = '';
+                try {
+                    originHost = new URL(event.origin).hostname;
+                } catch (_) {}
+
+                if (isYoutubePlayable && /(^|\.)youtube(-nocookie)?\.com$/i.test(originHost)) {
+                    const state = typeof data.info === 'number' ? data.info : data.info?.playerState;
+                    if (typeof state !== 'number') return;
+                    if (state === 1) setIsPaused(false);
+                    if (state === -1 || state === 0 || state === 2 || state === 5) setIsPaused(true);
+                    return;
+                }
+
+                if (isSpotifyPlayable && event.origin === 'https://open.spotify.com') {
+                    const isSpotifyPaused = data.payload?.isPaused ?? data.data?.isPaused ?? data.isPaused;
+                    if (typeof isSpotifyPaused === 'boolean') setIsPaused(isSpotifyPaused);
+                }
+            };
+
+            window.addEventListener('message', onMessage);
+            const syncTimer = isYoutubePlayable ? window.setInterval(syncYoutubePlayerState, 1500) : null;
+            if (isYoutubePlayable) requestAnimationFrame(syncYoutubePlayerState);
+            return () => {
+                window.removeEventListener('message', onMessage);
+                if (syncTimer != null) window.clearInterval(syncTimer);
+            };
+        }, [isSpotifyPlayable, isYoutubePlayable, syncYoutubePlayerState]);
+
         const dragHandleClass =
             'cursor-grab active:cursor-grabbing select-none touch-none';
+
+        const renderUrlControls = (variant = 'light') => {
+            const dark = variant === 'dark';
+            return (
+                <div className={dark ? 'bg-gray-950 border-b border-white/10 p-3 space-y-2' : 'space-y-2'}>
+                    <div className="flex gap-2" onPointerDown={(e) => e.stopPropagation()}>
+                        <input
+                            className={`flex-1 p-3 rounded-xl text-[10px] border outline-none focus:ring-1 min-w-0 ${
+                                dark
+                                    ? 'bg-white/10 border-white/10 focus:ring-white/40 text-white placeholder:text-white/35'
+                                    : 'bg-gray-50 border-gray-100 focus:ring-black text-black'
+                            }`}
+                            placeholder={t('labels.audio_widget_placeholder') || 'YouTube video/playlist or Spotify playlist URL...'}
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') submitInput();
+                            }}
+                        />
+                        <button
+                            type="button"
+                            onClick={submitInput}
+                            className={`p-3 rounded-xl active:scale-95 transition ${
+                                dark
+                                    ? 'bg-white text-black hover:bg-gray-100'
+                                    : 'bg-black text-white shadow-lg shadow-gray-200'
+                            }`}
+                        >
+                            <window.Icon name="play" size={18} />
+                        </button>
+                    </div>
+                    {history.length > 0 && (
+                        <div className="flex gap-1.5 overflow-x-auto no-scrollbar" onPointerDown={(e) => e.stopPropagation()}>
+                            {history.map((item) => (
+                                <button
+                                    key={item}
+                                    type="button"
+                                    onClick={() => playUrl(item)}
+                                    className={`shrink-0 max-w-[220px] truncate px-2.5 py-1.5 rounded-lg text-[9px] font-bold transition ${
+                                        dark
+                                            ? 'bg-white/10 text-white/70 hover:bg-white/20'
+                                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-black'
+                                    }`}
+                                    title={item}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const renderPlayerFrame = (isHidden = false) => {
+            if (isYoutubePlayable) {
+                return (
+                    <iframe
+                        key={playerKey}
+                        ref={playerFrameRef}
+                        title="YouTube audio player"
+                        src={youtubeEmbedUrl}
+                        width="100%"
+                        height="100%"
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        onLoad={syncYoutubePlayerState}
+                        tabIndex={isHidden ? -1 : undefined}
+                    />
+                );
+            }
+            if (isSpotifyPlayable) {
+                return (
+                    <iframe
+                        key={playerKey}
+                        ref={playerFrameRef}
+                        title="Spotify playlist player"
+                        src={spotifyEmbedUrl}
+                        width="100%"
+                        height="100%"
+                        frameBorder="0"
+                        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                        loading="lazy"
+                        tabIndex={isHidden ? -1 : undefined}
+                    />
+                );
+            }
+            return (
+                <div className="w-full h-full flex items-center justify-center text-white text-xs px-4 text-center">
+                    {t('alerts.invalid_audio_url') || 'Invalid audio URL. Supported: YouTube link/playlist and Spotify playlist.'}
+                </div>
+            );
+        };
 
         if (!url && !isMinimized) {
             return (
@@ -338,26 +559,12 @@
                             <window.Icon name="minus" size={14} />
                         </button>
                     </div>
-                    <div className="flex gap-2">
-                        <input
-                            className="flex-1 p-3 bg-gray-50 rounded-xl text-[10px] border border-gray-100 outline-none focus:ring-1 focus:ring-black text-black"
-                            placeholder={t('labels.youtube_url') || 'YouTube URL...'}
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                        />
-                        <button
-                            type="button"
-                            onClick={() => setUrl(input)}
-                            className="p-3 bg-black text-white rounded-xl active:scale-95 transition shadow-lg shadow-gray-200"
-                        >
-                            <window.Icon name="play" size={18} />
-                        </button>
-                    </div>
+                    {renderUrlControls('light')}
                 </div>
             );
         }
 
-        if (isMinimized) {
+        if (isMinimized && !url) {
             return (
                 <div
                     ref={rootRef}
@@ -379,40 +586,58 @@
         return (
             <div
                 ref={rootRef}
-                className="fixed bottom-5 right-5 z-[9999]  jukebox-maximized bg-black overflow-hidden flex flex-col animate-pop"
+                className={isMinimized
+                    ? 'fixed bottom-5 right-5 z-[9999] flex items-center gap-2 animate-pop'
+                    : 'fixed bottom-5 right-5 z-[9999]  jukebox-maximized bg-black overflow-hidden flex flex-col animate-pop'}
                 
                 
             >
+                {isMinimized ? (
+                    <>
+                        <button
+                            type="button"
+                            onClick={togglePlayback}
+                            className="w-11 h-11 rounded-full bg-white text-black shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition"
+                            title={isPaused ? 'Play' : 'Pause'}
+                        >
+                            <window.Icon key={isPaused ? 'play' : 'pause'} name={isPaused ? 'play' : 'pause'} size={17} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setMinimized(false)}
+                            className="jukebox-minimized bg-black text-white flex items-center justify-center hover:scale-110 active:scale-90 transition shadow-2xl"
+                        >
+                            <window.Icon name="music" size={20} />
+                        </button>
+                    </>
+                ) : (
+                    <>
+                        <div
+                            className={`p-3 flex justify-between items-center bg-gray-900/90 text-white ${dragHandleClass}`}
+                            
+                        >
+                            <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-50 flex-1 min-w-0 pr-2">
+                                {t('labels.audio_streaming')}
+                            </span>
+                            <div className="flex gap-1.5 shrink-0" onPointerDown={(e) => e.stopPropagation()}>
+                                <button type="button" onClick={() => setUrl('')} className="p-1.5 hover:bg-white/10 rounded-lg transition">
+                                    <window.Icon name="refresh-cw" size={12} />
+                                </button>
+                                <button type="button" onClick={minimizeFromPanelCenter} className="p-1.5 hover:bg-white/10 rounded-lg transition">
+                                    <window.Icon name="minus" size={12} />
+                                </button>
+                            </div>
+                        </div>
+                        {renderUrlControls('dark')}
+                    </>
+                )}
                 <div
-                    className={`p-3 flex justify-between items-center bg-gray-900/90 text-white ${dragHandleClass}`}
-                    
+                    key={playerKey}
+                    className={isMinimized
+                        ? 'absolute w-px h-px opacity-0 pointer-events-none overflow-hidden -left-[9999px] top-0'
+                        : `${isSpotifyPlayable ? 'h-[380px]' : 'aspect-video'} bg-black relative`}
                 >
-                    <span className="text-[8px] font-black uppercase tracking-[0.2em] opacity-50 flex-1 min-w-0 pr-2">
-                        {t('labels.audio_streaming')}
-                    </span>
-                    <div className="flex gap-1.5 shrink-0" onPointerDown={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => setUrl('')} className="p-1.5 hover:bg-white/10 rounded-lg transition">
-                            <window.Icon name="refresh-cw" size={12} />
-                        </button>
-                        <button type="button" onClick={minimizeFromPanelCenter} className="p-1.5 hover:bg-white/10 rounded-lg transition">
-                            <window.Icon name="minus" size={12} />
-                        </button>
-                    </div>
-                </div>
-                <div className="aspect-video bg-black relative">
-                    {pId || vId ? (
-                        <window.ReactPlayer
-                            url={url}
-                            width="100%"
-                            height="100%"
-                            playing={false}
-                            muted={false}
-                            controls={true}
-                            config={{ youtube: { playerVars: { origin: window.location.origin } } }}
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-white text-xs">{t('alerts.invalid_youtube_url')}</div>
-                    )}
+                    {renderPlayerFrame(isMinimized)}
                 </div>
             </div>
         );
