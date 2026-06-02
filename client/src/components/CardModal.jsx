@@ -155,6 +155,19 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
     const handleUpload = (e) => {
         const file = e.target.files[0];
         if (file) {
+            const MAX_TOTAL_BYTES = 10 * 1024 * 1024;
+            // base64 strings are ~33% larger than the original file, so multiply by 0.75 to get the real byte size
+            const currentTotal = attachments.reduce((sum, a) => {
+                if (a.dataUrl) return sum + Math.round(a.dataUrl.length * 0.75);
+                return sum;
+            }, 0);
+            if (currentTotal + file.size > MAX_TOTAL_BYTES) {
+                const usedMB = (currentTotal / 1024 / 1024).toFixed(1);
+                const fileMB = (file.size / 1024 / 1024).toFixed(1);
+                showToast(t('alerts.attachment_limit_exceeded') || `File too large (${fileMB} MB) — card limit is 10 MB total (${usedMB} MB used).`, 'error');
+                e.target.value = '';
+                return;
+            }
             const reader = new FileReader();
             reader.onload = (re) => {
                 setAttachments([...attachments, { id: window.generateId('att'), name: file.name, dataUrl: re.target.result, size: (file.size / 1024).toFixed(1) + ' KB' }]);
@@ -359,7 +372,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
             <div className="space-y-2">
                 {(card.auditTrail || []).map((log, i) => (
                     <div key={i} className="text-xs text-gray-500 flex justify-between border-b border-gray-50 pb-1">
-                        <span><strong className="text-gray-700">{log.user || t('labels.system')}</strong> -> {log.action}</span>
+                        <span><strong className="text-gray-700">{log.user || t('labels.system')}</strong> {'->'} {log.action}</span>
                         <span className="text-[9px] text-gray-400">{new Date(log.timestamp).toLocaleString()}</span>
                     </div>
                 ))}
