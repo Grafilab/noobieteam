@@ -798,7 +798,10 @@ User Request: ${aiInput}` : aiInput;
                                     <window.Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                     <input className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500 w-32 lg:w-48" placeholder={t('labels.search_placeholder')} value={filterKeyword} onChange={e => setFilterKeyword(e.target.value)} />
                                 </div>
-                                <input className="bg-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-gray-200 outline-none w-32 text-gray-600" placeholder={t('labels.epic_tag') || 'Filter by Epic'} value={filterEpic} onChange={e => setFilterEpic(e.target.value)} />
+                                <select className="bg-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-gray-200 outline-none cursor-pointer text-gray-600" value={filterEpic} onChange={e => setFilterEpic(e.target.value)}>
+                                    <option value="">{t('labels.all_epics') || 'All Epic Tag'}</option>
+                                    {epics.map(epic => <option key={epic} value={epic}>{epic}</option>)}
+                                </select>
                                 <select className="bg-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-gray-200 outline-none cursor-pointer text-gray-600" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
                                     <option value="">{t('labels.all_members')}</option>
                                     {members.filter(m => m && typeof m === 'string').map(m => <option key={m} value={m}>{m.split('@')[0]}</option>)}
