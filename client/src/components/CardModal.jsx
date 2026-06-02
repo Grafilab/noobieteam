@@ -169,6 +169,40 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
         return (Array.isArray(allUsers) ? allUsers : []).find(u => u.email === email) || { email, avatar: null };
     };
 
+    const buildSavePayload = () => ({
+        __v: card.__v,
+        title,
+        content,
+        dueDate,
+        urgency,
+        qaStatus,
+        epic,
+        checklist,
+        assignees,
+        attachments,
+        auditEvent: { user: user?.email || 'System', action: 'Updated card contents' }
+    });
+
+    const hasLocalChanges = () => {
+        const originalDueDate = card.dueDate ? (String(card.dueDate).includes('T') ? String(card.dueDate).split('T')[0] : String(card.dueDate)) : '';
+        return (
+            title !== (card.title || '') ||
+            (content || '') !== (card.content || '') ||
+            dueDate !== originalDueDate ||
+            urgency !== (card.urgency || 'LOW') ||
+            qaStatus !== (card.qaStatus || 'NONE') ||
+            epic !== (card.epic || '') ||
+            JSON.stringify(checklist || []) !== JSON.stringify(card.checklist || []) ||
+            JSON.stringify(assignees || []) !== JSON.stringify(card.assignees || []) ||
+            JSON.stringify(attachments || []) !== JSON.stringify(card.attachments || [])
+        );
+    };
+
+    const handleSave = () => onSave(buildSavePayload());
+
+    const handleClose = () => hasLocalChanges() ? handleSave() : onClose();
+
+
     return (
         <div className="fixed inset-0 z-[1600] flex items-center justify-center p-4 glass-blur animate-fade-in text-black">
             <div className="bg-white w-[95%] md:w-full max-w-3xl rounded-3xl md:rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden animate-pop flex flex-col max-h-[90vh] md:max-h-[85vh]">
@@ -176,7 +210,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
                     <input className="text-2xl font-black focus:outline-none w-full bg-transparent tracking-tighter" value={title} onChange={e => setTitle(e.target.value)} />
                     <div className="flex gap-2">
                         <button onClick={() => showConfirm(t('actions.delete_mission'), t('actions.erase_completely'), () => onDelete(card.id))} className="p-3 text-red-400 hover:bg-red-50 rounded-full transition"><window.Icon name="trash-2" size={20} /></button>
-                        <button onClick={onClose} className="p-3 hover:bg-gray-100 rounded-full transition"><window.Icon name="x" size={20} /></button>
+                        <button onClick={handleClose} className="p-3 hover:bg-gray-100 rounded-full transition"><window.Icon name="x" size={20} /></button>
                     </div>
                 </div>
                 <div className="p-4 md:p-8 space-y-6 md:space-y-8 overflow-y-auto no-scrollbar flex-1">
@@ -231,14 +265,17 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
                     </div>
 
                     <div>
-                        <div className="flex justify-between items-center mb-3">
+                        <div className="mb-3">
                             <label className="text-sm font-black text-black uppercase tracking-widest">{t('labels.mission_objective')}</label>
-                            <button onClick={() => setIsEditingContent(!isEditingContent)} className={`p-2 rounded-lg transition ${isEditingContent ? 'bg-black text-white' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}><window.Icon name="edit-3" size={14} /></button>
                         </div>
                         {isEditingContent ? (
-                            <window.WYSIWYG id={card.id || card._id} value={content} onChange={setContent} />
+                            <window.WYSIWYG id={card.id || card._id} value={content} onChange={setContent} onBlur={() => setIsEditingContent(false)} autoFocus />
                         ) : (
-                            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-xs min-h-[60px] ql-editor" dangerouslySetInnerHTML={{ __html: parseContent(content) }} />
+                            <div
+                                className="p-4 bg-gray-50 rounded-2xl border border-gray-100 text-xs min-h-[60px] ql-editor cursor-text hover:border-blue-200 hover:bg-white transition"
+                                onClick={() => setIsEditingContent(true)}
+                                dangerouslySetInnerHTML={{ __html: parseContent(content) }}
+                            />
                         )}
                     </div>
                     
@@ -371,7 +408,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
         <button onClick={() => setShowAudit(!showAudit)} className="flex items-center gap-1.5 text-gray-400 hover:text-gray-600 transition text-[10px] font-black uppercase tracking-widest">
             <window.Icon name={showAudit ? "chevron-up" : "chevron-down"} size={14} /> {t('labels.audit_trail')}
         </button>
-        <button onClick={() => onSave({ __v: card.__v, title, content, dueDate, urgency, qaStatus, epic, checklist, assignees, attachments, auditEvent: { user: user?.email || 'System', action: 'Updated card contents' } })} className="bg-blue-500 text-white px-10 py-4 rounded-full text-[10px] font-black uppercase tracking-widest active:scale-95 transition shadow-xl">{t('actions.synchronize')}</button>
+        <button onClick={handleSave} className="bg-blue-500 text-white px-10 py-4 rounded-full text-[10px] font-black uppercase tracking-widest active:scale-95 transition shadow-xl">{t('actions.synchronize')}</button>
     </div>
 </div>
             </div>

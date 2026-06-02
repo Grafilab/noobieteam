@@ -120,7 +120,7 @@
     "no_document_selected": "ドキュメントが選択されていません",
     "account": "アカウント",
     "deadline": "期限",
-    "mission_objective": "ミッション内容",
+    "mission_objective": "Description",
     "mission_chatter": "ミッションコメント",
     "action_required": "アクションが必要です",
     "vault_security": "保管庫セキュリティ",
