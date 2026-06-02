@@ -63,6 +63,25 @@ function getWorkspaceCanonicalId(ws) {
     return String(pick);
 }
 
+function getWorkspaceRouteId(ws) {
+    if (!ws) return '';
+    return encodeURIComponent(String(ws.slug || ws.id || ws._id || ''));
+}
+
+function getCardIdFromPath() {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const cardIndex = parts.indexOf('card');
+    return cardIndex >= 0 && parts[cardIndex + 1] ? decodeURIComponent(parts[cardIndex + 1]) : '';
+}
+
+function buildCardPath(ws, cardId) {
+    return `/workspace/${getWorkspaceRouteId(ws)}/card/${encodeURIComponent(String(cardId))}`;
+}
+
+function buildWorkspacePath(ws) {
+    return `/workspace/${getWorkspaceRouteId(ws)}`;
+}
+
 /**
  * Loads notifications for this workspace from sessionStorage using the canonical id.
  * If nothing is stored under that key, tries the other id field once and migrates to the canonical key.
@@ -220,6 +239,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     }, [wsNotificationStorageId, user]);
 
     const [editingCard, setEditingCard] = React.useState(null);
+    const [urlCardId, setUrlCardId] = React.useState(() => getCardIdFromPath());
     const [tab, setTab] = React.useState('board');
     const [showMemberDropdown, setShowMemberDropdown] = React.useState(false);
     const memberDropdownRef = React.useRef(null);
@@ -263,6 +283,13 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         
         socket.on('card:lock_rejected', ({ cardId, message }) => {
             showToast(message);
+            if (String(cardId || '') === String(getCardIdFromPath() || '')) {
+                const nextPath = buildWorkspacePath(workspace);
+                if (window.location.pathname !== nextPath) {
+                    window.history.replaceState({}, '', nextPath);
+                }
+                setUrlCardId('');
+            }
             setEditingCard(null);
         });
         
@@ -284,6 +311,68 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     
     const footerQuoteTimeoutRef = React.useRef(null);
     const [spamEmojis, setSpamEmojis] = React.useState([]);
+
+    React.useEffect(() => {
+        const handlePopState = () => setUrlCardId(getCardIdFromPath());
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    const setCardUrl = React.useCallback((cardId, replace = false) => {
+        if (!cardId) return;
+        const nextPath = buildCardPath(workspace, cardId);
+        if (window.location.pathname !== nextPath) {
+            window.history[replace ? 'replaceState' : 'pushState']({}, '', nextPath);
+        }
+        setUrlCardId(String(cardId));
+    }, [workspace]);
+
+    const clearCardUrl = React.useCallback(() => {
+        const nextPath = buildWorkspacePath(workspace);
+        if (window.location.pathname !== nextPath) {
+            window.history.pushState({}, '', nextPath);
+        }
+        setUrlCardId('');
+    }, [workspace]);
+
+    const openCard = React.useCallback((card, replaceUrl = false) => {
+        if (!card) return;
+        const cardId = card.id || card._id;
+        if (!cardId) return;
+        setEditingCard(card);
+        setTab('board');
+        setCardUrl(cardId, replaceUrl);
+    }, [setCardUrl]);
+
+    React.useEffect(() => {
+        const pathCardId = getCardIdFromPath();
+        setUrlCardId(pathCardId);
+    }, [wsNotificationStorageId]);
+
+    React.useEffect(() => {
+        if (!urlCardId || !Array.isArray(cards) || cards.length === 0) return;
+        const target = cards.find(c => c && String(c.id || c._id) === String(urlCardId));
+        if (!target || target.archived) return;
+        const activeId = editingCard && (editingCard.id || editingCard._id);
+        if (String(activeId || '') === String(urlCardId)) return;
+        if (lockedCards[urlCardId] && lockedCards[urlCardId] !== user?.email) {
+            showToast(t('alerts.card_locked', { user: lockedCards[urlCardId] }) || `Locked by ${lockedCards[urlCardId]}`);
+            const nextPath = buildWorkspacePath(workspace);
+            if (window.location.pathname !== nextPath) {
+                window.history.replaceState({}, '', nextPath);
+            }
+            setUrlCardId('');
+            return;
+        }
+        setEditingCard(target);
+        setTab('board');
+    }, [urlCardId, cards, editingCard, lockedCards, user?.email, workspace]);
+
+    React.useEffect(() => {
+        if (!urlCardId && editingCard && !getCardIdFromPath()) {
+            setEditingCard(null);
+        }
+    }, [urlCardId, editingCard]);
 
     const handleEmojiSelect = async (emoji) => {
         setShowEmojiPicker(false);
@@ -872,7 +961,7 @@ User Request: ${aiInput}` : aiInput;
                                             {displayCards.filter(c => c && (c.columnId === 'backlog' || c.col === 'backlog')).map((card, idx) => (
                                                 <dnd.Draggable key={`backlog-${card.id || card._id || idx}`} draggableId={String(card.id || card._id)} index={idx}>
                                                     {(dragProvided, snapshot) => (
-                                                        <div ref={dragProvided.innerRef} {...dragProvided.draggableProps} {...dragProvided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { setEditingCard(card); } }} className={`bg-white border border-gray-100 rounded-xl p-3 shadow-sm hover:shadow-md transition cursor-pointer flex justify-between items-center group ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-xl z-50' : ''}`}>
+                                                        <div ref={dragProvided.innerRef} {...dragProvided.draggableProps} {...dragProvided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { openCard(card); } }} className={`bg-white border border-gray-100 rounded-xl p-3 shadow-sm hover:shadow-md transition cursor-pointer flex justify-between items-center group ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-xl z-50' : ''}`}>
                                                             {lockedCards[card.id || card._id] && lockedCards[card.id || card._id] !== user?.email && <div className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 z-10 shadow-sm border border-white" title={`Locked by ${lockedCards[card.id || card._id]}`}><window.Icon name="lock" size={12}/></div>}
 <div className="flex flex-col gap-1 overflow-hidden pr-2">
                                                                 <span className="font-bold text-xs text-gray-800 truncate">{card.epic ? <span className="mr-1 text-[8px] px-1 bg-purple-100 text-purple-700 rounded uppercase">{card.epic}</span> : null}{card.title}</span>
@@ -895,7 +984,7 @@ User Request: ${aiInput}` : aiInput;
                                 <div className="p-3 border-t border-gray-200 bg-gray-100/50 rounded-b-[2rem]">
                                     <button onClick={() => { 
                                         const nc = { columnId: 'backlog', title: t('labels.new_backlog_item'), urgency: 'LOW', assignees: [user?.email], auditEvent: { user: user?.email || 'System', action: 'Created backlog card' } };
-                                        fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); setEditingCard(finalTask); }); 
+                                        fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); }); 
                                     }} className="w-full py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition shadow-sm flex items-center justify-center gap-2">
                                         <window.Icon name="plus" size={14} /> {t('actions.add_to_backlog')}
                                     </button>
@@ -914,7 +1003,7 @@ User Request: ${aiInput}` : aiInput;
                                                     <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
                                                         <button onClick={() => { 
                                                             const nc = { columnId: col.id, title: t('labels.new_task'), urgency: 'LOW', assignees: [user?.email], auditEvent: { user: user?.email || 'System', action: 'Created card' } };
-                                                            fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); setEditingCard(finalTask); }); 
+                                                            fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); }); 
                                                         }} className={`p-1.5 rounded-lg transition ${colIconThemeClasses}`} title={t('actions.new_task')}><window.Icon name="plus-circle" size={18} /></button>
                                                         {col.id !== 'todo' && <button onClick={() => showConfirm(t('actions.erase_stage'), t('alerts.confirm_erase_stage', {name: col.title}), async () => { 
                                                 const newCols = columns.filter(c => c.id !== col.id);
@@ -929,7 +1018,7 @@ User Request: ${aiInput}` : aiInput;
                                                             {displayCards.filter(c => c && (c.columnId === col.id || c.col === col.id)).map((card, idx) => (
                                                                 <dnd.Draggable key={`col-${card.id || card._id || idx}`} draggableId={String(card.id || card._id)} index={idx}>
                                                                     {(provided, snapshot) => (
-                                                                        <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { setEditingCard(card); } }} className={`bg-white text-gray-800 border border-gray-100 rounded-2xl p-4 insta-shadow hover:shadow-xl transition-all duration-300 cursor-pointer group relative ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-2xl z-50' : 'hover:scale-[1.02]'}`}>
+                                                                        <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { openCard(card); } }} className={`bg-white text-gray-800 border border-gray-100 rounded-2xl p-4 insta-shadow hover:shadow-xl transition-all duration-300 cursor-pointer group relative ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-2xl z-50' : 'hover:scale-[1.02]'}`}>
                                             {lockedCards[card.id || card._id] && lockedCards[card.id || card._id] !== user?.email && <div className="absolute top-2 right-2 bg-red-100 text-red-600 rounded-full p-1.5 z-10 shadow-sm border border-white" title={`Locked by ${lockedCards[card.id || card._id]}`}><window.Icon name="lock" size={14}/></div>}
 <div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className={`w-16 h-2 rounded-full ${ {low: 'bg-blue-300', med: 'bg-yellow-400', high: 'bg-red-500', LOW: 'bg-blue-300', MED: 'bg-yellow-400', HIGH: 'bg-red-500'}[card.urgency?.toLowerCase() || 'low'] }`}></div>{card.qaStatus && card.qaStatus !== 'NONE' && (() => { const qa = { PENDING: { icon: 'clock', cls: 'bg-amber-100 text-amber-700 border-amber-200' }, PASSED: { icon: 'check-circle', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }, FAILED: { icon: 'x-circle', cls: 'bg-red-100 text-red-700 border-red-200' } }[card.qaStatus]; return qa ? <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${qa.cls}`} title={t(`labels.qa_${card.qaStatus.toLowerCase()}`)}><window.Icon name={qa.icon} size={10} />{t(`labels.qa_${card.qaStatus.toLowerCase()}`)}</div> : null; })()}</div><div className="opacity-0 group-hover:opacity-100 flex gap-2 transition" onClick={e => e.stopPropagation()}><button onClick={async (e) => { e.stopPropagation(); await fetch(`/api/tasks/${card.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: true, auditEvent: { user: user?.email || 'System', action: 'Archived card' } }) }); setCards(cards.map(c => c.id === card.id ? { ...c, archived: true } : c)); showToast(t('alerts.card_archived'), 'success'); }} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50" title={t('actions.archive')}><window.Icon name="archive" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, -1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-left" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, 1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-right" size={14}/></button></div></div>
                                             {card.epic && <div className="inline-block px-2 py-0.5 bg-purple-100 text-purple-700 text-[8px] font-black uppercase tracking-widest rounded mb-2 shadow-sm border border-purple-200">{card.epic}</div>}
@@ -970,7 +1059,7 @@ User Request: ${aiInput}` : aiInput;
                     </dnd.DragDropContext>
                 </main>
             ) : tab === 'vault' ? <window.VaultTab workspace={workspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} /> : null}
-            {editingCard && <window.CardModal card={editingCard} user={user} members={members} allUsers={allUsers} socket={socketRef.current} workspaceId={workspace.id || workspace._id} onClose={() => setEditingCard(null)} onSave={async (upd) => { 
+            {editingCard && <window.CardModal card={editingCard} user={user} members={members} allUsers={allUsers} socket={socketRef.current} workspaceId={workspace.id || workspace._id} cardUrl={`${window.location.origin}${buildCardPath(workspace, editingCard.id || editingCard._id)}`} onClose={() => { setEditingCard(null); clearCardUrl(); }} onSave={async (upd) => { 
                 const cardId = editingCard.id || editingCard._id; 
                 const res = await fetch(`/api/tasks/${cardId}`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(upd) }); 
                 const updatedTask = await res.json(); 
@@ -984,7 +1073,8 @@ User Request: ${aiInput}` : aiInput;
                 }
                 setCards(prev => (prev || []).map(c => (c && (c.id === cardId || c._id === cardId)) ? updatedTask : c)); 
                 setEditingCard(null); 
-            }} onDelete={async (id) => { await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => (prev || []).filter(c => c && (c.id !== id && c._id !== id))); setEditingCard(null); }} />}
+                clearCardUrl();
+            }} onDelete={async (id) => { await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => (prev || []).filter(c => c && (c.id !== id && c._id !== id))); setEditingCard(null); clearCardUrl(); }} />}
             
             
             {/* Emoji Spam Animation */}

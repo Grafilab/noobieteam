@@ -1,4 +1,4 @@
-window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, socket, workspaceId }) => {
+window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, socket, workspaceId, cardUrl }) => {
     
     React.useEffect(() => {
         if (socket && card && (card.id || card._id)) {
@@ -14,6 +14,10 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
     const { showConfirm } = window.useModals();
     const { showToast } = window.useToasts();
     const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
+    const tr = (key, fallback) => {
+        const value = t(key);
+        return value && value !== key ? value : fallback;
+    };
     const [title, setTitle] = React.useState(card.title);
     const [content, setContent] = React.useState(card.content);
     const [isEditingContent, setIsEditingContent] = React.useState(false);
@@ -202,6 +206,29 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
 
     const handleClose = () => hasLocalChanges() ? handleSave() : onClose();
 
+    const copyCardLink = async () => {
+        const link = cardUrl || window.location.href;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(link);
+            } else {
+                const input = document.createElement('textarea');
+                input.value = link;
+                input.setAttribute('readonly', '');
+                input.style.position = 'fixed';
+                input.style.opacity = '0';
+                document.body.appendChild(input);
+                input.select();
+                document.execCommand('copy');
+                document.body.removeChild(input);
+            }
+            showToast(tr('alerts.copied_to_clipboard', 'Copied to clipboard!'));
+        } catch (e) {
+            console.error(e);
+            showToast(tr('alerts.copy_failed', 'Unable to copy link.'));
+        }
+    };
+
 
     return (
         <div className="fixed inset-0 z-[1600] flex items-center justify-center p-4 glass-blur animate-fade-in text-black">
@@ -209,7 +236,8 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
                 <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
                     <input className="text-2xl font-black focus:outline-none w-full bg-transparent tracking-tighter" value={title} onChange={e => setTitle(e.target.value)} />
                     <div className="flex gap-2">
-                        <button onClick={() => showConfirm(t('actions.delete_mission'), t('actions.erase_completely'), () => onDelete(card.id))} className="p-3 text-red-400 hover:bg-red-50 rounded-full transition"><window.Icon name="trash-2" size={20} /></button>
+                        <button onClick={copyCardLink} className="p-3 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition" title={tr('actions.copy_link', 'Copy Link')}><window.Icon name="link" size={20} /></button>
+                        <button onClick={() => showConfirm(t('actions.delete_mission'), t('actions.erase_completely'), () => onDelete(card.id || card._id))} className="p-3 text-red-400 hover:bg-red-50 rounded-full transition"><window.Icon name="trash-2" size={20} /></button>
                         <button onClick={handleClose} className="p-3 hover:bg-gray-100 rounded-full transition"><window.Icon name="x" size={20} /></button>
                     </div>
                 </div>
