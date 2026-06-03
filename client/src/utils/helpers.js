@@ -101,3 +101,12 @@ window.extractPlaylistId = (url) => {
     const match = cleanUrl.match(regExp);
     return match ? match[1] : null;
 };
+
+window.extractSpotifyPlaylistId = (url) => {
+    if (!url) return null;
+    const cleanUrl = url.trim().replace(/['"]/g, '');
+    const uriMatch = cleanUrl.match(/^spotify:playlist:([a-zA-Z0-9]+)$/i);
+    if (uriMatch) return uriMatch[1];
+    const webMatch = cleanUrl.match(/spotify\.com\/(?:embed\/)?playlist\/([a-zA-Z0-9]+)(?:\?|$|\/)/i);
+    return webMatch ? webMatch[1] : null;
+};

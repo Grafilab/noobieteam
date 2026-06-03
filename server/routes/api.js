@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const express = require('express');
 const router = express.Router();
-const { User, Workspace, Task, Doc, Folder, Env, EmojiEvent } = require('../db');
+const { User, Workspace, Task, Doc, Folder, Env, EmojiEvent, WorkspaceActivity } = require('../db');
 
 // --- Workspaces ---
 router.get('/workspaces', async (req, res) => {
@@ -247,6 +247,16 @@ router.get('/users', async (req, res) => {
     const users = await User.find();
     res.json(users);
   } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/users/:email', async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.email });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 router.post('/users', async (req, res) => {
@@ -605,6 +615,25 @@ router.post('/workspaces/:wsId/emojis', async (req, res) => {
 });
 
 // Fetch unseen emojis for a specific user in a workspace
+// --- Workspace Activity Log ---
+router.get('/workspaces/:wsId/activity', async (req, res) => {
+  try {
+    const logs = await WorkspaceActivity.find({ workspaceId: req.params.wsId })
+      .sort({ createdAt: -1 })
+      .limit(200);
+    res.json(logs);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/workspaces/:wsId/activity', async (req, res) => {
+  try {
+    const { user, action, resourceType, resourceName } = req.body;
+    const log = new WorkspaceActivity({ workspaceId: req.params.wsId, user, action, resourceType, resourceName });
+    await log.save();
+    res.json(log);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/workspaces/:wsId/emojis/unseen', async (req, res) => {
     try {
         const userEmail = req.headers['user-email'] || req.query.email;

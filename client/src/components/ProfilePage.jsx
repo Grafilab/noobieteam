@@ -225,6 +225,7 @@ window.ProfilePage = ({ user, onBack, onUpdateUser, theme }) => {
                             </div>
                         )}
                     </section>
+
                 </div>
             </main>
         </div>
