@@ -541,6 +541,7 @@ window.Main = () => {
     const [lang, setLang] = React.useState(() => localStorage.getItem('nt_lang') || 'en');
     const [translations, setTranslations] = React.useState({});
     const [ws, setWs] = React.useState(null);
+    const [showProfile, setShowProfile] = React.useState(false);
     const [theme, setTheme] = React.useState(() => localStorage.getItem('nt_theme') || 'default');
     const [player, setPlayer] = React.useState({ url: '', isMinimized: true });
     const [toasts, setToasts] = React.useState([]);
@@ -594,7 +595,7 @@ window.Main = () => {
         return result;
     }, [translations]);
 
-    const showToast = (message) => { const id = window.generateId('tst'); setToasts(prev => [...prev, { id, message }]); };
+    const showToast = (message, type = 'info') => { const id = window.generateId('tst'); setToasts(prev => [...prev, { id, message, type }]); };
     const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
 
     const setUrl = (newUrl) => {
@@ -621,6 +622,14 @@ window.Main = () => {
         publicWsPath = parts[2];
         publicFolderName = parts[3];
     }
+
+    const selectWorkspace = (selectedWs) => {
+        const wsRoute = '/workspace/' + (selectedWs.slug || selectedWs.id || selectedWs._id);
+        if (!(window.location.pathname === wsRoute || window.location.pathname.startsWith(wsRoute + '/'))) {
+            window.history.pushState({}, '', wsRoute);
+        }
+        setWs(selectedWs);
+    };
     
     return (
         <ErrorBoundary>
@@ -630,10 +639,11 @@ window.Main = () => {
                 <window.ToastContext.Provider value={{ showToast }}>
                 {isPublicDocs ? <window.PublicDocsView wsPath={publicWsPath} folderName={publicFolderName} /> :
                 !user ? <window.AuthScreen onAuthSuccess={setUser} /> :
-                 !ws ? <window.WorkspaceHub user={user} onLogout={() => { setUser(null); showToast("Session ended. 👋"); }} onSelect={(selectedWs) => { window.history.pushState({}, '', '/workspace/' + (selectedWs.slug || selectedWs.id || selectedWs._id)); setWs(selectedWs); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} urlWsSlug={urlWsSlug} /> :
-                 <window.WorkspaceView workspace={ws} onBack={() => { window.history.pushState({}, '', '/'); setWs(null); }} user={user} onLogout={() => { setWs(null); setUser(null); showToast(t('alerts.session_ended') || "Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} isJukeboxActive={!!player.url && !player.isMinimized} />}
+                showProfile ? <window.ProfilePage user={user} onBack={() => setShowProfile(false)} onUpdateUser={setUser} theme={theme} /> :
+                 !ws ? <window.WorkspaceHub user={user} onLogout={() => { setShowProfile(false); setUser(null); showToast("Session ended. 👋"); }} onSelect={selectWorkspace} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} urlWsSlug={urlWsSlug} /> :
+                 <window.WorkspaceView workspace={ws} onBack={() => { window.history.pushState({}, '', '/'); setWs(null); }} user={user} onLogout={() => { setShowProfile(false); setWs(null); setUser(null); showToast(t('alerts.session_ended') || "Session ended. 👋"); }} onThemeChange={setTheme} theme={theme} onUpdateUser={setUser} onOpenProfile={() => setShowProfile(true)} isJukeboxActive={!!player.url && !player.isMinimized} />}
                 <window.FloatingJukebox />
-                <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} onRemove={() => removeToast(t.id)} />)}</div>
+                <div className="toast-container">{toasts.map(t => <window.Toast key={t.id} message={t.message} type={t.type} onRemove={() => removeToast(t.id)} />)}</div>
                 {modalState.isOpen && (
                     
                     <window.GlobalModal isOpen={true} onClose={() => setModalState(prev => ({...prev, isOpen: false}))} title={modalState.title} footer={

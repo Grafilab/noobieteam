@@ -15,16 +15,26 @@ function readWorkspaceNotificationsSession(workspaceId) {
 }
 
 /** Saves one entry and returns the updated list (newest first, max 50). */
-function pushWorkspaceNotificationSession(workspaceId, message) {
+function pushWorkspaceNotificationSession(workspaceId, message, options = {}) {
+    if (!workspaceId || !message) return readWorkspaceNotificationsSession(workspaceId);
     const prev = readWorkspaceNotificationsSession(workspaceId);
+    if (options.dedupeKey && prev.some((n) => n && n.dedupeKey === options.dedupeKey)) {
+        return prev;
+    }
     const entry = {
         id: window.generateId ? window.generateId('ntf') : `ntf-${Date.now()}`,
         message,
         createdAt: Date.now(),
+        workspaceId,
+        workspaceName: options.workspaceName || '',
+        type: options.type || 'activity',
+        cardId: options.cardId || '',
+        dedupeKey: options.dedupeKey || '',
     };
     const next = [entry, ...prev].slice(0, 50);
     try {
         sessionStorage.setItem(ntWorkspaceNotificationsKey(workspaceId), JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
     } catch (_) {}
     return next;
 }
@@ -34,6 +44,7 @@ function removeWorkspaceNotificationSession(workspaceId, notificationId) {
     const next = prev.filter((n) => n && n.id !== notificationId);
     try {
         sessionStorage.setItem(ntWorkspaceNotificationsKey(workspaceId), JSON.stringify(next));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
     } catch (_) {}
     return next;
 }
@@ -41,9 +52,84 @@ function removeWorkspaceNotificationSession(workspaceId, notificationId) {
 function clearWorkspaceNotificationsSession(workspaceId) {
     try {
         sessionStorage.removeItem(ntWorkspaceNotificationsKey(workspaceId));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
     } catch (_) {}
     return [];
 }
+
+function readAllWorkspaceNotificationsSession() {
+    const all = [];
+    try {
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+            const key = sessionStorage.key(i);
+            if (!key || !key.startsWith('nt_ws_notifications_')) continue;
+            const workspaceId = key.replace('nt_ws_notifications_', '');
+            readWorkspaceNotificationsSession(workspaceId).forEach((n) => {
+                if (n) all.push({ ...n, workspaceId: n.workspaceId || workspaceId });
+            });
+        }
+    } catch (_) {}
+    return all.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function removeAnyWorkspaceNotificationSession(notification) {
+    if (!notification || !notification.workspaceId) return readAllWorkspaceNotificationsSession();
+    removeWorkspaceNotificationSession(notification.workspaceId, notification.id);
+    return readAllWorkspaceNotificationsSession();
+}
+
+function clearAllWorkspaceNotificationsSession() {
+    try {
+        const keys = [];
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+            const key = sessionStorage.key(i);
+            if (key && key.startsWith('nt_ws_notifications_')) keys.push(key);
+        }
+        keys.forEach((key) => sessionStorage.removeItem(key));
+        window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
+    } catch (_) {}
+    return [];
+}
+
+function getTaskLastActor(task) {
+    const trail = Array.isArray(task?.auditTrail) ? task.auditTrail : [];
+    const latest = trail[trail.length - 1];
+    return latest?.user || '';
+}
+
+function getTaskLastAuditTimestamp(task) {
+    const trail = Array.isArray(task?.auditTrail) ? task.auditTrail : [];
+    const latest = trail[trail.length - 1];
+    return latest?.timestamp || task?.updatedAt || '';
+}
+
+function isUserInvolvedInCard(card, email) {
+    return !!email && Array.isArray(card?.assignees) && card.assignees.includes(email);
+}
+
+function isCardDueSoon(card) {
+    if (!card || card.archived || !card.dueDate) return false;
+    const due = new Date(card.dueDate);
+    if (Number.isNaN(due.getTime())) return false;
+    const diffDays = (due - new Date()) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= 3;
+}
+
+function formatStatusName(columns, columnId) {
+    const col = (columns || []).find((c) => c && c.id === columnId);
+    return col?.title || columnId || 'Unknown';
+}
+
+function getCommentId(comment, index) {
+    return comment?._id || comment?.id || `${comment?.authorEmail || 'unknown'}:${comment?.timestamp || index}`;
+}
+
+window.NTNotifications = {
+    readAll: readAllWorkspaceNotificationsSession,
+    push: pushWorkspaceNotificationSession,
+    remove: removeAnyWorkspaceNotificationSession,
+    clearAll: clearAllWorkspaceNotificationsSession,
+};
 
 /**
  * One string id for this workspace (API + sessionStorage). Prefers `id`, then `_id`, handling ObjectId-like objects.
@@ -61,6 +147,25 @@ function getWorkspaceCanonicalId(ws) {
     if (pick === '') return '';
     if (typeof pick === 'object' && pick.toString) return String(pick);
     return String(pick);
+}
+
+function getWorkspaceRouteId(ws) {
+    if (!ws) return '';
+    return encodeURIComponent(String(ws.slug || ws.id || ws._id || ''));
+}
+
+function getCardIdFromPath() {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const cardIndex = parts.indexOf('card');
+    return cardIndex >= 0 && parts[cardIndex + 1] ? decodeURIComponent(parts[cardIndex + 1]) : '';
+}
+
+function buildCardPath(ws, cardId) {
+    return `/workspace/${getWorkspaceRouteId(ws)}/card/${encodeURIComponent(String(cardId))}`;
+}
+
+function buildWorkspacePath(ws) {
+    return `/workspace/${getWorkspaceRouteId(ws)}`;
 }
 
 /**
@@ -91,11 +196,27 @@ function readWorkspaceNotificationsForWorkspace(ws) {
     return [];
 }
 
-window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, theme, onUpdateUser, isJukeboxActive }) => {
+window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, theme, onUpdateUser, onOpenProfile, isJukeboxActive }) => {
     const { showConfirm, showPrompt, showAlert } = window.useModals();
     const { showToast } = window.useToasts();
     const [columns, setColumns] = React.useState(workspace.columns && workspace.columns.length > 0 ? workspace.columns : [{ id: 'todo', title: 'To Do', order: 0 }]);
+    const [localWorkspace, setLocalWorkspace] = React.useState(workspace);
     const [cards, setCards] = React.useState([]);
+    const [activityLogs, setActivityLogs] = React.useState([]);
+
+    const logActivity = React.useCallback(async (action, resourceType, resourceName) => {
+        try {
+            const res = await fetch(`/api/workspaces/${workspace.id}/activity`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: user?.email || 'System', action, resourceType, resourceName })
+            });
+            if (res.ok) {
+                const log = await res.json();
+                setActivityLogs(prev => [log, ...prev]);
+            }
+        } catch(e) { console.error('Activity log error:', e); }
+    }, [workspace.id, user?.email]);
     const [allUsers, setAllUsers] = React.useState([]);
     const [members, setMembers] = React.useState(() => {
         if (!workspace || !workspace.members) return [user?.email].filter(Boolean);
@@ -113,19 +234,131 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         setSessionNotifications(readWorkspaceNotificationsForWorkspace(workspace));
     }, [wsNotificationStorageId]);
 
-    /** Avoid duplicate welcome toast per workspace session; safe when switching workspaces (no stale state). */
-    const welcomeNotifiedWorkspaceRef = React.useRef(null);
+    React.useEffect(() => {
+        const refreshNotifications = () => setSessionNotifications(readWorkspaceNotificationsForWorkspace(workspace));
+        window.addEventListener('nt:notifications-changed', refreshNotifications);
+        return () => window.removeEventListener('nt:notifications-changed', refreshNotifications);
+    }, [workspace, wsNotificationStorageId]);
+
     /** Ignores stale task-fetch results after the user switches to another workspace. */
     const workspaceFetchScopeRef = React.useRef('');
+    const cardsSnapshotRef = React.useRef([]);
+
+    const addWorkspaceNotification = React.useCallback((message, options = {}) => {
+        setSessionNotifications(pushWorkspaceNotificationSession(wsNotificationStorageId, message, {
+            ...options,
+            workspaceName: workspace?.name || options.workspaceName || '',
+        }));
+    }, [workspace?.name, wsNotificationStorageId]);
+
+    const emitCardMoveNotification = React.useCallback((card, targetColumnId, movedTask = {}) => {
+        const recipients = Array.isArray(card?.assignees) ? card.assignees.filter(Boolean) : [];
+        const cardId = String(card?.id || card?._id || movedTask?.id || movedTask?._id || '');
+        if (!socketRef.current || !wsNotificationStorageId || !cardId || recipients.length === 0) return;
+        const statusName = formatStatusName(columns, targetColumnId);
+        const eventStamp = getTaskLastAuditTimestamp(movedTask) || movedTask?.updatedAt || Date.now();
+        socketRef.current.emit('notification:workspace', {
+            workspaceId: wsNotificationStorageId,
+            workspaceName: workspace?.name || '',
+            recipients,
+            senderEmail: user?.email || '',
+            message: `"${card?.title || movedTask?.title || 'Untitled card'}" moved to ${statusName}.`,
+            type: 'status',
+            cardId,
+            dedupeKey: `moved:${cardId}:${targetColumnId}:${eventStamp}`,
+        });
+    }, [columns, user?.email, workspace?.name, wsNotificationStorageId]);
+
+    const scanTaskNotifications = React.useCallback((nextCards, previousCards = [], { initial = false } = {}) => {
+        if (!user?.email || !wsNotificationStorageId) return;
+        const previousById = new Map((previousCards || []).filter(c => c && (c.id || c._id)).map(c => [String(c.id || c._id), c]));
+        const nextById = new Map((nextCards || []).filter(c => c && (c.id || c._id)).map(c => [String(c.id || c._id), c]));
+        const actorIsCurrentUser = (card) => getTaskLastActor(card) === user.email;
+
+        nextById.forEach((card, cardId) => {
+            const prev = previousById.get(cardId);
+            const title = card.title || 'Untitled card';
+
+            if (isUserInvolvedInCard(card, user.email) && isCardDueSoon(card)) {
+                const dueLabel = new Date(card.dueDate).toLocaleDateString();
+                addWorkspaceNotification(`"${title}" is expiring soon (${dueLabel}).`, {
+                    type: 'due-soon',
+                    cardId,
+                    dedupeKey: `due-soon:${cardId}:${dueLabel}`,
+                });
+            }
+
+            const prevInvolved = isUserInvolvedInCard(prev, user.email);
+            const nextInvolved = isUserInvolvedInCard(card, user.email);
+            const actor = getTaskLastActor(card) || 'Someone';
+
+            if (initial) return;
+
+            const comments = Array.isArray(card.comments) ? card.comments : [];
+            const previousCommentIds = new Set((Array.isArray(prev?.comments) ? prev.comments : []).map(getCommentId));
+            comments.forEach((comment, index) => {
+                const commentId = getCommentId(comment, index);
+                if (!Array.isArray(comment?.taggedUsers) || !comment.taggedUsers.includes(user.email)) return;
+                if (comment.authorEmail === user.email) return;
+                if (prev && previousCommentIds.has(commentId)) return;
+                addWorkspaceNotification(`${comment.authorEmail || 'Someone'} mentioned you in "${title}".`, {
+                    type: 'mention',
+                    cardId,
+                    dedupeKey: `mention:${cardId}:${commentId}`,
+                });
+            });
+
+            if (!prevInvolved && nextInvolved && !actorIsCurrentUser(card)) {
+                addWorkspaceNotification(`${actor} added you to "${title}".`, {
+                    type: 'assigned',
+                    cardId,
+                    dedupeKey: `assigned:${cardId}:${card.updatedAt || Date.now()}`,
+                });
+            }
+
+            if (!prev) return;
+
+            if (nextInvolved && !actorIsCurrentUser(card) && (prev.columnId || prev.col) !== (card.columnId || card.col)) {
+                addWorkspaceNotification(`"${title}" moved to ${formatStatusName(columns, card.columnId || card.col)}.`, {
+                    type: 'status',
+                    cardId,
+                    dedupeKey: `moved:${cardId}:${card.columnId || card.col}:${getTaskLastAuditTimestamp(card) || Date.now()}`,
+                });
+            }
+
+            if (prevInvolved && !prev.archived && card.archived && !actorIsCurrentUser(card)) {
+                addWorkspaceNotification(`"${title}" was archived.`, {
+                    type: 'archived',
+                    cardId,
+                    dedupeKey: `archived:${cardId}:${card.updatedAt || Date.now()}`,
+                });
+            }
+        });
+
+        if (!initial) {
+            previousById.forEach((prev, cardId) => {
+                if (nextById.has(cardId) || !isUserInvolvedInCard(prev, user.email)) return;
+                addWorkspaceNotification(`"${prev.title || 'Untitled card'}" was deleted.`, {
+                    type: 'deleted',
+                    cardId,
+                    dedupeKey: `deleted:${cardId}:${Date.now()}`,
+                });
+            });
+        }
+    }, [addWorkspaceNotification, columns, user?.email, wsNotificationStorageId]);
 
     React.useEffect(() => {
         const fetchScopeId = getWorkspaceCanonicalId(workspace);
         workspaceFetchScopeRef.current = fetchScopeId;
-        fetch(`/api/workspaces/${workspace.id}/tasks`).then(r => r.json()).then(data => { 
+        fetch(`/api/workspaces/${workspace.id}/activity`).then(r => r.json()).then(data => {
+            if (Array.isArray(data)) setActivityLogs(data);
+        }).catch(() => {});
+
+        fetch(`/api/workspaces/${workspace.id}/tasks`).then(r => r.json()).then(data => {
             if (workspaceFetchScopeRef.current !== fetchScopeId) return;
             const validData = Array.isArray(data) ? data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)) : [];
-            setCards(validData); 
-            setLoading(false); 
+            setCards(validData);
+            setLoading(false);
             
             // Check for expired cards
             const now = new Date();
@@ -143,29 +376,8 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
                 setShowExpiredModal(true);
                 setSelectedMoveCol(columns[0]?.id || 'todo');
             }
-            
-            const widForWelcome = fetchScopeId;
-            if (user?.email && widForWelcome && welcomeNotifiedWorkspaceRef.current !== widForWelcome) {
-                welcomeNotifiedWorkspaceRef.current = widForWelcome;
-                const myCards = validData.filter(c => c && !c.archived && c.assignees && c.assignees.includes(user.email));
-                const expiringCount = myCards.filter(c => {
-                    if (!c.dueDate) return false;
-                    const due = new Date(c.dueDate);
-                    const diffDays = (due - now) / (1000 * 60 * 60 * 24);
-                    return diffDays >= 0 && diffDays <= 3;
-                }).length;
-                const backlogCount = myCards.filter(c => c.columnId === 'backlog' || c.col === 'backlog').length;
-
-                const welcomeMsg =
-                    t('alerts.welcome_stats', {
-                        total: myCards.length,
-                        expiring: expiringCount,
-                        backlog: backlogCount,
-                    }) ||
-                    `Workspace loaded: You have ${myCards.length} assigned cards (${expiringCount} expiring soon, ${backlogCount} in backlog).`;
-                showToast(welcomeMsg);
-                setSessionNotifications(pushWorkspaceNotificationSession(widForWelcome, welcomeMsg));
-            }
+            scanTaskNotifications(validData, cardsSnapshotRef.current, { initial: true });
+            cardsSnapshotRef.current = validData;
         }).catch(console.error);
         fetch('/api/users')
             .then((r) => r.json())
@@ -217,9 +429,33 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         // Start polling loop
         const interval = setInterval(fetchUnseenEmojis, 10000);
         return () => clearInterval(interval);
-    }, [wsNotificationStorageId, user]);
+    }, [wsNotificationStorageId, user, scanTaskNotifications]);
+
+    React.useEffect(() => {
+        if (!wsNotificationStorageId || !workspace?.id) return;
+        let cancelled = false;
+        const pollTasks = async () => {
+            try {
+                const res = await fetch(`/api/workspaces/${workspace.id}/tasks`);
+                const data = await res.json();
+                if (cancelled || workspaceFetchScopeRef.current !== wsNotificationStorageId) return;
+                const validData = Array.isArray(data) ? data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)) : [];
+                scanTaskNotifications(validData, cardsSnapshotRef.current, { initial: false });
+                cardsSnapshotRef.current = validData;
+                setCards(validData);
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        const interval = setInterval(pollTasks, 15000);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [scanTaskNotifications, workspace?.id, wsNotificationStorageId]);
 
     const [editingCard, setEditingCard] = React.useState(null);
+    const [urlCardId, setUrlCardId] = React.useState(() => getCardIdFromPath());
     const [tab, setTab] = React.useState('board');
     const [showMemberDropdown, setShowMemberDropdown] = React.useState(false);
     const memberDropdownRef = React.useRef(null);
@@ -248,9 +484,21 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         const backendUrl = window.location.origin.includes('task.zettalog.com') ? 'https://task.zettalog.com' : window.location.origin;
         const socket = window.io(backendUrl, { path: '/api/socket.io' });
         socketRef.current = socket;
+        const joinedWorkspaceId = getWorkspaceCanonicalId(workspace) || workspace.id || workspace._id;
+        socket.emit('workspace:join', { workspaceId: joinedWorkspaceId });
         
         socket.on('card:locked', ({ cardId, user }) => {
             setLockedCards(prev => Object.assign({}, prev, { [cardId]: user }));
+        });
+
+        socket.on('notification:card', (notification) => {
+            if (!notification || !Array.isArray(notification.recipients) || !notification.recipients.includes(user?.email)) return;
+            addWorkspaceNotification(notification.message, {
+                type: notification.type,
+                cardId: notification.cardId,
+                dedupeKey: notification.dedupeKey,
+                workspaceName: notification.workspaceName,
+            });
         });
         
         socket.on('card:unlocked', ({ cardId }) => {
@@ -263,14 +511,23 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         
         socket.on('card:lock_rejected', ({ cardId, message }) => {
             showToast(message);
+            if (String(cardId || '') === String(getCardIdFromPath() || '')) {
+                const nextPath = buildWorkspacePath(workspace);
+                if (window.location.pathname !== nextPath) {
+                    window.history.replaceState({}, '', nextPath);
+                }
+                setUrlCardId('');
+            }
             setEditingCard(null);
         });
         
         return () => {
             socket.disconnect();
         };
-    }, [workspace.id]);
+    }, [addWorkspaceNotification, user?.email, workspace]);
     const [showBacklog, setShowBacklog] = React.useState(false);
+    const [showActivityLog, setShowActivityLog] = React.useState(false);
+    const [activityTooltip, setActivityTooltip] = React.useState(null);
     
     // Safety check for Drag and Drop library
     const dnd = window.ReactBeautifulDnd;
@@ -284,6 +541,68 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
     
     const footerQuoteTimeoutRef = React.useRef(null);
     const [spamEmojis, setSpamEmojis] = React.useState([]);
+
+    React.useEffect(() => {
+        const handlePopState = () => setUrlCardId(getCardIdFromPath());
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    const setCardUrl = React.useCallback((cardId, replace = false) => {
+        if (!cardId) return;
+        const nextPath = buildCardPath(workspace, cardId);
+        if (window.location.pathname !== nextPath) {
+            window.history[replace ? 'replaceState' : 'pushState']({}, '', nextPath);
+        }
+        setUrlCardId(String(cardId));
+    }, [workspace]);
+
+    const clearCardUrl = React.useCallback(() => {
+        const nextPath = buildWorkspacePath(workspace);
+        if (window.location.pathname !== nextPath) {
+            window.history.pushState({}, '', nextPath);
+        }
+        setUrlCardId('');
+    }, [workspace]);
+
+    const openCard = React.useCallback((card, replaceUrl = false) => {
+        if (!card) return;
+        const cardId = card.id || card._id;
+        if (!cardId) return;
+        setEditingCard(card);
+        setTab('board');
+        setCardUrl(cardId, replaceUrl);
+    }, [setCardUrl]);
+
+    React.useEffect(() => {
+        const pathCardId = getCardIdFromPath();
+        setUrlCardId(pathCardId);
+    }, [wsNotificationStorageId]);
+
+    React.useEffect(() => {
+        if (!urlCardId || !Array.isArray(cards) || cards.length === 0) return;
+        const target = cards.find(c => c && String(c.id || c._id) === String(urlCardId));
+        if (!target || target.archived) return;
+        const activeId = editingCard && (editingCard.id || editingCard._id);
+        if (String(activeId || '') === String(urlCardId)) return;
+        if (lockedCards[urlCardId] && lockedCards[urlCardId] !== user?.email) {
+            showToast(t('alerts.card_locked', { user: lockedCards[urlCardId] }) || `Locked by ${lockedCards[urlCardId]}`);
+            const nextPath = buildWorkspacePath(workspace);
+            if (window.location.pathname !== nextPath) {
+                window.history.replaceState({}, '', nextPath);
+            }
+            setUrlCardId('');
+            return;
+        }
+        setEditingCard(target);
+        setTab('board');
+    }, [urlCardId, cards, editingCard, lockedCards, user?.email, workspace]);
+
+    React.useEffect(() => {
+        if (!urlCardId && editingCard && !getCardIdFromPath()) {
+            setEditingCard(null);
+        }
+    }, [urlCardId, editingCard]);
 
     const handleEmojiSelect = async (emoji) => {
         setShowEmojiPicker(false);
@@ -345,7 +664,9 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(fields)
         });
-        return await res.json();
+        const updated = await res.json();
+        setLocalWorkspace(prev => ({ ...prev, ...fields }));
+        return updated;
     };
 
     const epics = React.useMemo(() => [...new Set((cards || []).map(c => c && c.epic).filter(Boolean))], [cards]);
@@ -380,8 +701,12 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         const nextIdx = colIdx + direction;
         if (nextIdx >= 0 && nextIdx < columns.length) {
             const nextColId = columns[nextIdx].id;
-            await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: nextColId, col: nextColId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + nextColId } }) });
-            setCards(prev => prev.map(c => c.id === id ? { ...c, columnId: nextColId, col: nextColId } : c));
+            const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: nextColId, col: nextColId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + nextColId } }) });
+            const movedTask = await res.json().catch(() => null);
+            if (!res.ok) return;
+            emitCardMoveNotification(card, nextColId, movedTask || {});
+            setCards(prev => prev.map(c => c.id === id ? { ...(movedTask || c), id: c.id || movedTask?.id || movedTask?._id, columnId: nextColId, col: nextColId } : c));
+            logActivity('Moved card to ' + (columns[nextIdx]?.title || nextColId), 'card', card.title);
         }
     };
 
@@ -662,7 +987,7 @@ User Request: ${aiInput}` : aiInput;
         <div className="h-screen flex flex-col bg-white overflow-hidden text-black">
             <nav className={`h-16 px-6 flex items-center justify-between sticky top-0 z-[120] transition-colors duration-500 shadow-sm ${headerClass}`}>
                 <div className="flex items-center gap-6">
-                    <button onClick={() => showConfirm(t('actions.exit_workspace') || 'Exit Workspace', t('alerts.confirm_exit_workspace') || 'Are you sure you want to return to the workspace selection hub?', onBack)} className={`p-2.5 hover:bg-black/5 rounded-xl transition ${isDarkHeader ? 'text-white' : 'text-black'}`}><window.Icon name="arrow-left" size={20}/></button>
+                    <button onClick={onBack} className={`p-2.5 hover:bg-black/5 rounded-xl transition ${isDarkHeader ? 'text-white' : 'text-black'}`}><window.Icon name="arrow-left" size={20}/></button>
                     <div className={`leading-none ${isDarkHeader ? 'text-white' : 'text-black'}`}><h2 className="text-lg font-black tracking-tighter italic mr-4">{t('app_name')}</h2><p className="text-[8px] font-black uppercase tracking-[0.4em] opacity-50 mt-1.5">{workspace.name}</p></div>
                     {isAdmin && (
                         <button onClick={() => setShowUserManagement(true)} className={`text-[10px] font-black uppercase tracking-widest transition hover:opacity-70 flex items-center gap-2 ${isDarkHeader ? 'text-white/80' : 'text-gray-500'}`}>
@@ -786,7 +1111,7 @@ User Request: ${aiInput}` : aiInput;
                             </div>
                         )}
                     </div>
-                    <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} />
+                    <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} onOpenProfile={onOpenProfile} />
                 </div>
             </nav>
             {/* Mobile Tab Nav */}
@@ -805,7 +1130,10 @@ User Request: ${aiInput}` : aiInput;
                                     <window.Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                     <input className="pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500 w-32 lg:w-48" placeholder={t('labels.search_placeholder')} value={filterKeyword} onChange={e => setFilterKeyword(e.target.value)} />
                                 </div>
-                                <input className="bg-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-gray-200 outline-none w-32 text-gray-600" placeholder={t('labels.epic_tag') || 'Filter by Epic'} value={filterEpic} onChange={e => setFilterEpic(e.target.value)} />
+                                <select className="bg-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-gray-200 outline-none cursor-pointer text-gray-600" value={filterEpic} onChange={e => setFilterEpic(e.target.value)}>
+                                    <option value="">{t('labels.all_epics') || 'All Epic Tag'}</option>
+                                    {epics.map(epic => <option key={epic} value={epic}>{epic}</option>)}
+                                </select>
                                 <select className="bg-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-gray-200 outline-none cursor-pointer text-gray-600" value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}>
                                     <option value="">{t('labels.all_members')}</option>
                                     {members.filter(m => m && typeof m === 'string').map(m => <option key={m} value={m}>{m.split('@')[0]}</option>)}
@@ -816,8 +1144,9 @@ User Request: ${aiInput}` : aiInput;
                             </div>
                         </div>
                         <div className="flex gap-2">
+                            <button onClick={() => setShowActivityLog(!showActivityLog)} className={`px-6 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex items-center gap-2 whitespace-nowrap ${showActivityLog ? 'bg-purple-100 text-purple-700' : 'bg-white text-gray-700 border border-gray-200'}`}><window.Icon name="activity" size={14} /> {t('actions.activity_log') || 'Activity Log'}</button>
                             <button onClick={() => setShowBacklog(!showBacklog)} className={`px-6 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex items-center gap-2 ${showBacklog ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700 border border-gray-200'}`}><window.Icon name="list" size={14} /> {t('actions.backlog')}</button>
-                            <button onClick={() => showPrompt(t('actions.new_stage'), t('labels.stage_name'), async (name) => { if(name) { const newCols = [...columns, { id: window.generateId('col'), title: name }]; await fetch(`/api/workspaces/${workspace.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columns: newCols }) }); setColumns(newCols); } })} className="bg-black text-white px-8 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex-shrink-0">{t('actions.new_stage')}</button>
+                            <button onClick={() => showPrompt(t('actions.new_stage'), t('labels.stage_name'), async (name) => { if(name) { const newCols = [...columns, { id: window.generateId('col'), title: name }]; await fetch(`/api/workspaces/${workspace.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columns: newCols }) }); setColumns(newCols); logActivity('Added stage', 'stage', name); } })} className="bg-black text-white px-8 py-4 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition flex-shrink-0">{t('actions.new_stage')}</button>
                         </div>
                     </header>
                     <dnd.DragDropContext onDragEnd={async (result) => {
@@ -834,7 +1163,7 @@ User Request: ${aiInput}` : aiInput;
                                 }
 
                                 const newCards = [...cards];
-                                const draggedIdx = newCards.findIndex(c => c.id === draggableId);
+                                const draggedIdx = newCards.findIndex(c => String(c.id || c._id) === String(draggableId));
                                 if (draggedIdx === -1) return;
                                 
                                 const draggedCard = { ...newCards[draggedIdx], columnId: destination.droppableId };
@@ -845,8 +1174,8 @@ User Request: ${aiInput}` : aiInput;
                                 if (destination.index >= destColCards.length) {
                                     newCards.push(draggedCard);
                                 } else {
-                                    const anchorCardId = destColCards[destination.index].id;
-                                    const globalInsertIdx = newCards.findIndex(c => c.id === anchorCardId);
+                                    const anchorCardId = destColCards[destination.index].id || destColCards[destination.index]._id;
+                                    const globalInsertIdx = newCards.findIndex(c => String(c.id || c._id) === String(anchorCardId));
                                     newCards.splice(globalInsertIdx, 0, draggedCard);
                                 }
                                 
@@ -858,7 +1187,13 @@ User Request: ${aiInput}` : aiInput;
                                 });
                                 
                                 setCards(newCards);
-                                await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
+                                const moveRes = await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
+                                const movedTask = await moveRes.json().catch(() => null);
+                                if (moveRes.ok) emitCardMoveNotification(draggedCard, destination.droppableId, movedTask || {});
+                                
+                                const movedCard = cards.find(c => c.id === draggableId || c._id === draggableId);
+                                const destColTitle = columns.find(c => c.id === destination.droppableId)?.title || destination.droppableId;
+                                logActivity('Moved card to ' + destColTitle, 'card', movedCard?.title);
                                 await fetch(`/api/workspaces/${workspace.id || workspace._id}/tasks/bulk-order`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ updates: bulkUpdates }) });
                             }}>
                             <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden h-full w-full">
@@ -879,7 +1214,7 @@ User Request: ${aiInput}` : aiInput;
                                             {displayCards.filter(c => c && (c.columnId === 'backlog' || c.col === 'backlog')).map((card, idx) => (
                                                 <dnd.Draggable key={`backlog-${card.id || card._id || idx}`} draggableId={String(card.id || card._id)} index={idx}>
                                                     {(dragProvided, snapshot) => (
-                                                        <div ref={dragProvided.innerRef} {...dragProvided.draggableProps} {...dragProvided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { setEditingCard(card); } }} className={`bg-white border border-gray-100 rounded-xl p-3 shadow-sm hover:shadow-md transition cursor-pointer flex justify-between items-center group ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-xl z-50' : ''}`}>
+                                                        <div ref={dragProvided.innerRef} {...dragProvided.draggableProps} {...dragProvided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { openCard(card); } }} className={`bg-white border border-gray-100 rounded-xl p-3 shadow-sm hover:shadow-md transition cursor-pointer flex justify-between items-center group ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-xl z-50' : ''}`}>
                                                             {lockedCards[card.id || card._id] && lockedCards[card.id || card._id] !== user?.email && <div className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 z-10 shadow-sm border border-white" title={`Locked by ${lockedCards[card.id || card._id]}`}><window.Icon name="lock" size={12}/></div>}
 <div className="flex flex-col gap-1 overflow-hidden pr-2">
                                                                 <span className="font-bold text-xs text-gray-800 truncate">{card.epic ? <span className="mr-1 text-[8px] px-1 bg-purple-100 text-purple-700 rounded uppercase">{card.epic}</span> : null}{card.title}</span>
@@ -902,11 +1237,58 @@ User Request: ${aiInput}` : aiInput;
                                 <div className="p-3 border-t border-gray-200 bg-gray-100/50 rounded-b-[2rem]">
                                     <button onClick={() => { 
                                         const nc = { columnId: 'backlog', title: t('labels.new_backlog_item'), urgency: 'LOW', assignees: [user?.email], createdBy: user?.email, auditEvent: { user: user?.email || 'System', action: 'Created backlog card' } };
-                                        fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); setEditingCard(finalTask); }); 
+                                        fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); logActivity('Created backlog card', 'card', nc.title); });
                                     }} className="w-full py-2 bg-white border border-gray-200 text-gray-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition shadow-sm flex items-center justify-center gap-2">
                                         <window.Icon name="plus" size={14} /> {t('actions.add_to_backlog')}
                                     </button>
                                 </div>
+                            </div>
+                        )}
+                        {showActivityLog && (() => {
+                            const allLogs = activityLogs;
+                            return (
+                                <div className="w-full md:w-80 flex-shrink-0 bg-gray-50 border border-gray-200 rounded-[2rem] flex flex-col h-[50vh] md:h-full animate-fade-in">
+                                    <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-100/50 rounded-t-[2rem]">
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-gray-700 flex items-center gap-2">
+                                            <window.Icon name="activity" size={16} className="text-purple-500" />
+                                            {t('actions.activity_log') || 'Activity Log'}
+                                        </h3>
+                                        <button onClick={() => setShowActivityLog(false)} className="p-1 hover:bg-gray-200 rounded opacity-50 hover:opacity-100 transition"><window.Icon name="x" size={14}/></button>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto no-scrollbar p-3 pb-6 space-y-2">
+                                        {allLogs.length === 0 ? (
+                                            <p className="text-[10px] text-gray-400 font-bold text-center py-8 uppercase tracking-widest">{t('labels.no_activity') || 'No activity yet'}</p>
+                                        ) : allLogs.map((log, i) => (
+                                            <div key={log.id || i} className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex flex-col gap-0.5 overflow-hidden">
+                                                        <span className="text-[10px] font-black text-gray-700 truncate">{log.user || 'System'}</span>
+                                                        <span className="text-[9px] text-gray-500 font-bold">{log.action}</span>
+                                                        {log.resourceName && (
+                                                            <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
+                                                                <span className="min-w-0 flex-1 overflow-hidden"
+                                                                    onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setActivityTooltip({ text: log.resourceName, x: r.left, y: r.top - 4 }); }}
+                                                                    onMouseLeave={() => setActivityTooltip(null)}>
+                                                                    <span className="text-[8px] text-sky-500 font-black uppercase tracking-widest truncate px-1.5 py-0.5 bg-sky-50 rounded block">{log.resourceName}</span>
+                                                                </span>
+                                                                <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded flex-shrink-0 ${{ card: 'bg-purple-50 text-purple-600', stage: 'bg-orange-50 text-orange-500', vault: 'bg-yellow-50 text-yellow-600', doc: 'bg-green-50 text-green-600', folder: 'bg-pink-50 text-pink-600', api: 'bg-blue-50 text-blue-600' }[log.resourceType] || 'bg-gray-100 text-gray-500'}`}>{log.resourceType}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <span className="text-[8px] text-gray-400 font-bold flex-shrink-0">{new Date(log.createdAt).toLocaleString()}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="p-3 border-t border-gray-200 bg-gray-100/50 rounded-b-[2rem]">
+                                        <p className="text-[8px] text-gray-400 font-black uppercase tracking-widest text-center">{allLogs.length} {t('labels.events') || 'events'}</p>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        {activityTooltip && (
+                            <div className="fixed z-[9999] bg-gray-800 text-white text-[8px] font-bold px-2 py-1 rounded shadow-lg whitespace-normal max-w-[220px] pointer-events-none" style={{ left: activityTooltip.x, top: activityTooltip.y, transform: 'translateY(-100%)' }}>
+                                {activityTooltip.text}
                             </div>
                         )}
                         <dnd.Droppable droppableId="all-columns" direction="horizontal" type="COLUMN">
@@ -921,12 +1303,13 @@ User Request: ${aiInput}` : aiInput;
                                                     <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition">
                                                         <button onClick={() => { 
                                                             const nc = { columnId: col.id, title: t('labels.new_task'), urgency: 'LOW', assignees: [user?.email], createdBy: user?.email, auditEvent: { user: user?.email || 'System', action: 'Created card' } };
-                                                            fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); setEditingCard(finalTask); }); 
+                                                            fetch(`/api/workspaces/${workspace.id}/tasks`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(nc) }).then(r=>r.json()).then(task => { const resId = task.id || task._id; const finalTask = { ...task, id: resId }; setCards(prev => [...prev, finalTask]); openCard(finalTask); logActivity('Created card', 'card', nc.title); });
                                                         }} className={`p-1.5 rounded-lg transition ${colIconThemeClasses}`} title={t('actions.new_task')}><window.Icon name="plus-circle" size={18} /></button>
-                                                        {col.id !== 'todo' && <button onClick={() => showConfirm(t('actions.erase_stage'), t('alerts.confirm_erase_stage', {name: col.title}), async () => { 
+                                                        {col.id !== 'todo' && <button onClick={() => showConfirm(t('actions.erase_stage'), t('alerts.confirm_erase_stage', {name: col.title}), async () => {
                                                 const newCols = columns.filter(c => c.id !== col.id);
                                                 await fetch(`/api/workspaces/${workspace.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columns: newCols }) });
                                                 setColumns(newCols);
+                                                logActivity('Deleted stage', 'stage', col.title);
                                             })} className={`p-1.5 rounded-lg transition ${colIconThemeClasses}`} title={t('actions.erase_stage')}><window.Icon name="minus-circle" size={18} /></button>}
                                                     </div>
                                                 </div>
@@ -936,9 +1319,9 @@ User Request: ${aiInput}` : aiInput;
                                                             {displayCards.filter(c => c && (c.columnId === col.id || c.col === col.id)).map((card, idx) => (
                                                                 <dnd.Draggable key={`col-${card.id || card._id || idx}`} draggableId={String(card.id || card._id)} index={idx}>
                                                                     {(provided, snapshot) => (
-                                                                        <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { setEditingCard(card); } }} className={`bg-white text-gray-800 border border-gray-100 rounded-2xl p-4 insta-shadow hover:shadow-xl transition-all duration-300 cursor-pointer group relative ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-2xl z-50' : 'hover:scale-[1.02]'}`}>
+                                                                        <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps} onClick={() => { const cId = card.id || card._id; if (lockedCards[cId] && lockedCards[cId] !== user?.email) { showToast(t('alerts.card_locked', { user: lockedCards[cId] }) || `Locked by ${lockedCards[cId]}`); } else { openCard(card); } }} className={`bg-white text-gray-800 border border-gray-100 rounded-2xl p-4 insta-shadow hover:shadow-xl transition-all duration-300 cursor-pointer group relative ${snapshot.isDragging ? 'rotate-2 scale-105 shadow-2xl z-50' : 'hover:scale-[1.02]'}`}>
                                             {lockedCards[card.id || card._id] && lockedCards[card.id || card._id] !== user?.email && <div className="absolute top-2 right-2 bg-red-100 text-red-600 rounded-full p-1.5 z-10 shadow-sm border border-white" title={`Locked by ${lockedCards[card.id || card._id]}`}><window.Icon name="lock" size={14}/></div>}
-<div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className={`w-16 h-2 rounded-full ${ {low: 'bg-blue-300', med: 'bg-yellow-400', high: 'bg-red-500', LOW: 'bg-blue-300', MED: 'bg-yellow-400', HIGH: 'bg-red-500'}[card.urgency?.toLowerCase() || 'low'] }`}></div>{card.qaStatus && card.qaStatus !== 'NONE' && (() => { const qa = { PENDING: { icon: 'clock', cls: 'bg-amber-100 text-amber-700 border-amber-200' }, PASSED: { icon: 'check-circle', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }, FAILED: { icon: 'x-circle', cls: 'bg-red-100 text-red-700 border-red-200' } }[card.qaStatus]; return qa ? <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${qa.cls}`} title={t(`labels.qa_${card.qaStatus.toLowerCase()}`)}><window.Icon name={qa.icon} size={10} />{t(`labels.qa_${card.qaStatus.toLowerCase()}`)}</div> : null; })()}</div><div className="opacity-0 group-hover:opacity-100 flex gap-2 transition" onClick={e => e.stopPropagation()}><button onClick={async (e) => { e.stopPropagation(); await fetch(`/api/tasks/${card.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: true, auditEvent: { user: user?.email || 'System', action: 'Archived card' } }) }); setCards(cards.map(c => c.id === card.id ? { ...c, archived: true } : c)); showToast(t('alerts.card_archived'), 'success'); }} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50" title={t('actions.archive')}><window.Icon name="archive" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, -1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-left" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, 1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-right" size={14}/></button></div></div>
+<div className="flex justify-between items-start mb-3"><div className="flex items-center gap-2"><div className={`w-16 h-2 rounded-full ${ {low: 'bg-blue-300', med: 'bg-yellow-400', high: 'bg-red-500', LOW: 'bg-blue-300', MED: 'bg-yellow-400', HIGH: 'bg-red-500'}[card.urgency?.toLowerCase() || 'low'] }`}></div>{card.qaStatus && card.qaStatus !== 'NONE' && (() => { const qa = { PENDING: { icon: 'clock', cls: 'bg-amber-100 text-amber-700 border-amber-200' }, PASSED: { icon: 'check-circle', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' }, FAILED: { icon: 'x-circle', cls: 'bg-red-100 text-red-700 border-red-200' } }[card.qaStatus]; return qa ? <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${qa.cls}`} title={t(`labels.qa_${card.qaStatus.toLowerCase()}`)}><window.Icon name={qa.icon} size={10} />{t(`labels.qa_${card.qaStatus.toLowerCase()}`)}</div> : null; })()}</div><div className="opacity-0 group-hover:opacity-100 flex gap-2 transition" onClick={e => e.stopPropagation()}><button onClick={async (e) => { e.stopPropagation(); await fetch(`/api/tasks/${card.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: true, auditEvent: { user: user?.email || 'System', action: 'Archived card' } }) }); setCards(cards.map(c => c.id === card.id ? { ...c, archived: true } : c)); showToast(t('alerts.card_archived'), 'success'); logActivity('Archived card', 'card', card.title); }} className="p-2 bg-gray-50 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50" title={t('actions.archive')}><window.Icon name="archive" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, -1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-left" size={14}/></button><button onClick={(e) => { e.stopPropagation(); moveCard(card.id, 1); }} className="p-2 bg-gray-50 rounded-xl hover:bg-gray-100"><window.Icon name="arrow-right" size={14}/></button></div></div>
                                             {card.epic && <div className="inline-block px-2 py-0.5 bg-purple-100 text-purple-700 text-[8px] font-black uppercase tracking-widest rounded mb-2 shadow-sm border border-purple-200">{card.epic}</div>}
                                             <h4 className="font-black text-base leading-tight mb-3 tracking-tight">{card.title}</h4>
                                             {card.dueDate && <div className="inline-flex items-center gap-2.5 bg-red-50 text-red-500 px-3 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest mb-3 border-2 border-red-100 shadow-lg shadow-red-100"><window.Icon name="calendar" size={14} /> {card.dueDate}</div>}
@@ -977,8 +1360,8 @@ User Request: ${aiInput}` : aiInput;
                     </div>
                     </dnd.DragDropContext>
                 </main>
-            ) : tab === 'vault' ? <window.VaultTab workspace={workspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} /> : null}
-            {editingCard && <window.CardModal card={editingCard} user={user} members={members} allUsers={allUsers} socket={socketRef.current} workspaceId={workspace.id || workspace._id} workspace={workspace} onConfigureBitbucket={(afterSave) => { setPendingBranchAction(() => afterSave || null); setBitbucketRepo(workspace.bitbucketRepo || ''); setBitbucketBranchPrefix(workspace.bitbucketBranchPrefix || 'feature/'); setBitbucketDefaultBranch(workspace.bitbucketDefaultBranch || 'main'); setBitbucketAuthEmail(workspace.bitbucketAuthEmail || ''); setBitbucketApiTokenPlain(''); setIsBitbucketSettingsOpen(true); }} onPatch={(updated) => { const uid = updated.id || updated._id; setCards(prev => (prev || []).map(c => (c && (c.id === uid || c._id === uid)) ? { ...c, ...updated, id: uid } : c)); setEditingCard(prev => prev && (prev.id === uid || prev._id === uid) ? { ...prev, ...updated, id: uid } : prev); }} onClose={() => setEditingCard(null)} onSave={async (upd) => {
+            ) : tab === 'vault' ? <window.VaultTab workspace={localWorkspace} user={user} onUpdate={updateWorkspace} onUpdateUser={onUpdateUser} onLogActivity={logActivity} /> : tab === 'docs' ? <window.DocTab workspaceId={workspace?.id || workspace?._id} user={user} onLogActivity={logActivity} /> : null}
+            {editingCard && <window.CardModal card={editingCard} user={user} members={members} allUsers={allUsers} socket={socketRef.current} workspaceId={workspace.id || workspace._id} workspace={workspace} cardUrl={`${window.location.origin}${buildCardPath(workspace, editingCard.id || editingCard._id)}`} onConfigureBitbucket={(afterSave) => { setPendingBranchAction(() => afterSave || null); setBitbucketRepo(workspace.bitbucketRepo || ''); setBitbucketBranchPrefix(workspace.bitbucketBranchPrefix || 'feature/'); setBitbucketDefaultBranch(workspace.bitbucketDefaultBranch || 'main'); setBitbucketAuthEmail(workspace.bitbucketAuthEmail || ''); setBitbucketApiTokenPlain(''); setIsBitbucketSettingsOpen(true); }} onPatch={(updated) => { const uid = updated.id || updated._id; setCards(prev => (prev || []).map(c => (c && (c.id === uid || c._id === uid)) ? { ...c, ...updated, id: uid } : c)); setEditingCard(prev => prev && (prev.id === uid || prev._id === uid) ? { ...prev, ...updated, id: uid } : prev); }} onClose={() => { setEditingCard(null); clearCardUrl(); }} onSave={async (upd) => {
                 const cardId = editingCard.id || editingCard._id; 
                 const res = await fetch(`/api/tasks/${cardId}`, { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(upd) }); 
                 const updatedTask = await res.json(); 
@@ -990,9 +1373,15 @@ User Request: ${aiInput}` : aiInput;
                     }
                     return;
                 }
-                setCards(prev => (prev || []).map(c => (c && (c.id === cardId || c._id === cardId)) ? updatedTask : c)); 
+                setCards(prev => {
+                    const next = (prev || []).map(c => (c && (c.id === cardId || c._id === cardId)) ? updatedTask : c);
+                    cardsSnapshotRef.current = next;
+                    return next;
+                }); 
+                logActivity('Updated card', 'card', editingCard.title);
                 setEditingCard(null); 
-            }} onDelete={async (id) => { await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => (prev || []).filter(c => c && (c.id !== id && c._id !== id))); setEditingCard(null); }} />}
+                clearCardUrl();
+            }} onDelete={async (id) => { const deletedCard = (cards || []).find(c => c && (c.id === id || c._id === id)); await fetch(`/api/tasks/${id}`, { method: "DELETE" }); setCards(prev => { const next = (prev || []).filter(c => c && (c.id !== id && c._id !== id)); cardsSnapshotRef.current = next; return next; }); setEditingCard(null); clearCardUrl(); logActivity('Deleted card', 'card', deletedCard?.title || 'Untitled card'); }} />}
             
             
             {/* Emoji Spam Animation */}
@@ -1227,7 +1616,7 @@ User Request: ${aiInput}` : aiInput;
                     cards.filter(c => c && c.columnId === viewArchivedCol && c.archived).map(c => (
                         <div key={c.id} className="flex justify-between items-center p-4 border border-gray-100 rounded-xl">
                             <div><p className="font-black text-sm">{c.title}</p></div>
-                            <button onClick={async () => { await fetch(`/api/tasks/${c.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: false, auditEvent: { user: user?.email || 'System', action: 'Restored card' } }) }); setCards(prev => prev.map(card => card.id === c.id ? { ...card, archived: false } : card)); }} className="text-blue-500 hover:text-blue-600 bg-blue-50 p-2 rounded-lg flex gap-2 items-center text-xs font-bold"><window.Icon name="upload-cloud" size={14}/> {t('actions.restore')}</button>
+                            <button onClick={async () => { await fetch(`/api/tasks/${c.id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ archived: false, auditEvent: { user: user?.email || 'System', action: 'Restored card' } }) }); setCards(prev => prev.map(card => card.id === c.id ? { ...card, archived: false } : card)); logActivity('Restored card', 'card', c.title); }} className="text-blue-500 hover:text-blue-600 bg-blue-50 p-2 rounded-lg flex gap-2 items-center text-xs font-bold"><window.Icon name="upload-cloud" size={14}/> {t('actions.restore')}</button>
                         </div>
                     ))}
                 </div>

@@ -37,7 +37,9 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String }, // Optional for Google OAuth users
   name: String,
+  avatar: String,
   avatarUrl: String,
+  homeBackgroundImage: String,
   method: { type: String, default: 'local' },
   vaultPin: { type: String }, // Hashed PIN for Google OAuth vault decryption
   lastLogin: { type: Date }
@@ -120,7 +122,14 @@ const taskSchema = new mongoose.Schema({
   }
 }, { timestamps: true, optimisticConcurrency: true });
 
-userSchema.set('toJSON', { virtuals: true });
+userSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret) => {
+    if (!ret.avatar && ret.avatarUrl) ret.avatar = ret.avatarUrl;
+    delete ret.password;
+    return ret;
+  }
+});
 workspaceSchema.set('toJSON', { virtuals: true });
 taskSchema.set('toJSON', { virtuals: true });
 
@@ -177,6 +186,16 @@ const Workspace = mongoose.model('Workspace', workspaceSchema);
 const Task = mongoose.model('Task', taskSchema);
 
 
+const workspaceActivitySchema = new mongoose.Schema({
+  workspaceId: { type: String, required: true },
+  user: { type: String, required: true },
+  action: { type: String, required: true },
+  resourceType: { type: String, enum: ['card', 'stage', 'vault', 'doc', 'folder', 'api'], required: true },
+  resourceName: { type: String },
+}, { timestamps: true });
+workspaceActivitySchema.set('toJSON', { virtuals: true });
+const WorkspaceActivity = mongoose.model('WorkspaceActivity', workspaceActivitySchema);
+
 const emojiEventSchema = new mongoose.Schema({
   workspaceId: { type: String, required: true },
   senderEmail: { type: String, required: true },
@@ -186,4 +205,4 @@ const emojiEventSchema = new mongoose.Schema({
 emojiEventSchema.set('toJSON', { virtuals: true });
 const EmojiEvent = mongoose.model('EmojiEvent', emojiEventSchema);
 
-module.exports = { connectDB, User, Workspace, Task, Doc, Folder, Env, EmojiEvent };
+module.exports = { connectDB, User, Workspace, Task, Doc, Folder, Env, EmojiEvent, WorkspaceActivity };

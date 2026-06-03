@@ -1,4 +1,76 @@
-window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdateUser, urlWsSlug }) => {
+if (!window.NTNotifications) {
+    const ntKey = (workspaceId) => `nt_ws_notifications_${workspaceId || 'unknown'}`;
+    const read = (workspaceId) => {
+        try {
+            const raw = sessionStorage.getItem(ntKey(workspaceId));
+            const data = raw ? JSON.parse(raw) : [];
+            return Array.isArray(data) ? data : [];
+        } catch (_) {
+            return [];
+        }
+    };
+    const readAll = () => {
+        const all = [];
+        try {
+            for (let i = 0; i < sessionStorage.length; i += 1) {
+                const key = sessionStorage.key(i);
+                if (!key || !key.startsWith('nt_ws_notifications_')) continue;
+                const workspaceId = key.replace('nt_ws_notifications_', '');
+                read(workspaceId).forEach((n) => {
+                    if (n) all.push({ ...n, workspaceId: n.workspaceId || workspaceId });
+                });
+            }
+        } catch (_) {}
+        return all.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    };
+    window.NTNotifications = {
+        readAll,
+        push(workspaceId, message, options = {}) {
+            if (!workspaceId || !message) return read(workspaceId);
+            const prev = read(workspaceId);
+            if (options.dedupeKey && prev.some((n) => n && n.dedupeKey === options.dedupeKey)) return prev;
+            const entry = {
+                id: window.generateId ? window.generateId('ntf') : `ntf-${Date.now()}`,
+                message,
+                createdAt: Date.now(),
+                workspaceId,
+                workspaceName: options.workspaceName || '',
+                type: options.type || 'activity',
+                cardId: options.cardId || '',
+                dedupeKey: options.dedupeKey || '',
+            };
+            const next = [entry, ...prev].slice(0, 50);
+            try {
+                sessionStorage.setItem(ntKey(workspaceId), JSON.stringify(next));
+                window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
+            } catch (_) {}
+            return next;
+        },
+        remove(notification) {
+            if (!notification || !notification.workspaceId) return readAll();
+            const next = read(notification.workspaceId).filter((n) => n && n.id !== notification.id);
+            try {
+                sessionStorage.setItem(ntKey(notification.workspaceId), JSON.stringify(next));
+                window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
+            } catch (_) {}
+            return readAll();
+        },
+        clearAll() {
+            try {
+                const keys = [];
+                for (let i = 0; i < sessionStorage.length; i += 1) {
+                    const key = sessionStorage.key(i);
+                    if (key && key.startsWith('nt_ws_notifications_')) keys.push(key);
+                }
+                keys.forEach((key) => sessionStorage.removeItem(key));
+                window.dispatchEvent(new CustomEvent('nt:notifications-changed'));
+            } catch (_) {}
+            return [];
+        },
+    };
+}
+
+window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdateUser, onOpenProfile, urlWsSlug }) => {
             const { showPrompt, showConfirm } = window.useModals();
             const { showToast } = window.useToasts();
             const { t } = window.useTranslation ? window.useTranslation() : { t: k => k };
@@ -8,6 +80,27 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
             const [pinPrompt, setPinPrompt] = React.useState({ isOpen: false, pin: '', confirm: '' });
             const [pinError, setPinError] = React.useState('');
             const [pinLoading, setPinLoading] = React.useState(false);
+            const [showNotificationDropdown, setShowNotificationDropdown] = React.useState(false);
+            const [globalNotifications, setGlobalNotifications] = React.useState(() => window.NTNotifications?.readAll?.() || []);
+            const notificationDropdownRef = React.useRef(null);
+
+            React.useEffect(() => {
+                const refreshNotifications = () => setGlobalNotifications(window.NTNotifications?.readAll?.() || []);
+                const handleClickOutside = (event) => {
+                    if (notificationDropdownRef.current && !notificationDropdownRef.current.contains(event.target)) {
+                        setShowNotificationDropdown(false);
+                    }
+                };
+                refreshNotifications();
+                window.addEventListener('nt:notifications-changed', refreshNotifications);
+                window.addEventListener('storage', refreshNotifications);
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => {
+                    window.removeEventListener('nt:notifications-changed', refreshNotifications);
+                    window.removeEventListener('storage', refreshNotifications);
+                    document.removeEventListener('mousedown', handleClickOutside);
+                };
+            }, []);
 
             React.useEffect(() => {
                 if (!user?.vaultPin) {
@@ -106,7 +199,7 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
             const headerClass = window.THEMES.find(t => t.id === theme)?.class || 'theme-default';
             const isDarkHeader = ['dark', 'darkblue', 'green', 'ocean'].includes(theme);
 
-            const displayWorkspaces = React.useMemo(() => {
+            const accessibleWorkspaces = React.useMemo(() => {
                 let filtered = Array.isArray(workspaces) ? workspaces : [];
                 if (!isAdmin) {
                     filtered = filtered.filter(w => {
@@ -114,11 +207,118 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                         return memberEmails.includes(user?.email);
                     });
                 }
-                return filtered.filter(w => w.archived === viewArchived);
-            }, [workspaces, viewArchived, isAdmin, user]);
+                return filtered;
+            }, [workspaces, isAdmin, user]);
+
+            const displayWorkspaces = React.useMemo(() => {
+                return accessibleWorkspaces.filter(w => w.archived === viewArchived);
+            }, [accessibleWorkspaces, viewArchived]);
+
+            const hubCardsSnapshotRef = React.useRef({});
+            const scanWorkspaceNotifications = React.useCallback((ws, nextCards, previousCards = [], initial = false) => {
+                const email = user?.email;
+                const wsId = String(ws?.id || ws?._id || '');
+                if (!email || !wsId || !window.NTNotifications?.push) return;
+                const previousById = new Map((previousCards || []).filter(c => c && (c.id || c._id)).map(c => [String(c.id || c._id), c]));
+                const nextById = new Map((nextCards || []).filter(c => c && (c.id || c._id)).map(c => [String(c.id || c._id), c]));
+                const push = (message, options = {}) => {
+                    window.NTNotifications.push(wsId, message, { ...options, workspaceName: ws?.name || '' });
+                    setGlobalNotifications(window.NTNotifications.readAll?.() || []);
+                };
+                const involved = (card) => Array.isArray(card?.assignees) && card.assignees.includes(email);
+                const dueSoon = (card) => {
+                    if (!card || card.archived || !card.dueDate) return false;
+                    const due = new Date(card.dueDate);
+                    if (Number.isNaN(due.getTime())) return false;
+                    const diffDays = (due - new Date()) / (1000 * 60 * 60 * 24);
+                    return diffDays >= 0 && diffDays <= 3;
+                };
+                const lastActor = (card) => {
+                    const trail = Array.isArray(card?.auditTrail) ? card.auditTrail : [];
+                    return trail[trail.length - 1]?.user || '';
+                };
+                const colName = (id) => (ws.columns || []).find(c => c && c.id === id)?.title || id || 'Unknown';
+                const commentId = (comment, index) => comment?._id || comment?.id || `${comment?.authorEmail || 'unknown'}:${comment?.timestamp || index}`;
+
+                nextById.forEach((card, cardId) => {
+                    const prev = previousById.get(cardId);
+                    const title = card.title || 'Untitled card';
+                    if (involved(card) && dueSoon(card)) {
+                        const dueLabel = new Date(card.dueDate).toLocaleDateString();
+                        push(`"${title}" is expiring soon (${dueLabel}).`, { type: 'due-soon', cardId, dedupeKey: `due-soon:${cardId}:${dueLabel}` });
+                    }
+                    const actor = lastActor(card) || 'Someone';
+                    const actorIsCurrentUser = actor === email;
+                    const prevInvolved = involved(prev);
+                    const nextInvolved = involved(card);
+
+                    if (initial) return;
+
+                    const previousCommentIds = new Set((Array.isArray(prev?.comments) ? prev.comments : []).map(commentId));
+                    (Array.isArray(card.comments) ? card.comments : []).forEach((comment, index) => {
+                        const id = commentId(comment, index);
+                        if (!Array.isArray(comment?.taggedUsers) || !comment.taggedUsers.includes(email)) return;
+                        if (comment.authorEmail === email) return;
+                        if (prev && previousCommentIds.has(id)) return;
+                        push(`${comment.authorEmail || 'Someone'} mentioned you in "${title}".`, { type: 'mention', cardId, dedupeKey: `mention:${cardId}:${id}` });
+                    });
+
+                    if (!prevInvolved && nextInvolved && !actorIsCurrentUser) {
+                        push(`${actor} added you to "${title}".`, { type: 'assigned', cardId, dedupeKey: `assigned:${cardId}:${card.updatedAt || Date.now()}` });
+                    }
+                    if (!prev) return;
+                    if (nextInvolved && !actorIsCurrentUser && (prev.columnId || prev.col) !== (card.columnId || card.col)) {
+                        push(`"${title}" moved to ${colName(card.columnId || card.col)}.`, { type: 'status', cardId, dedupeKey: `moved:${cardId}:${card.columnId || card.col}:${card.updatedAt || Date.now()}` });
+                    }
+                    if (prevInvolved && !prev.archived && card.archived && !actorIsCurrentUser) {
+                        push(`"${title}" was archived.`, { type: 'archived', cardId, dedupeKey: `archived:${cardId}:${card.updatedAt || Date.now()}` });
+                    }
+                });
+
+                if (!initial) {
+                    previousById.forEach((prev, cardId) => {
+                        if (nextById.has(cardId) || !involved(prev)) return;
+                        push(`"${prev.title || 'Untitled card'}" was deleted.`, { type: 'deleted', cardId, dedupeKey: `deleted:${cardId}:${Date.now()}` });
+                    });
+                }
+            }, [user?.email]);
+
+            React.useEffect(() => {
+                const activeWorkspaces = accessibleWorkspaces.filter(ws => ws && !ws.archived);
+                if (!user?.email || activeWorkspaces.length === 0) return;
+                let cancelled = false;
+                const pollAllProjects = async (initial = false) => {
+                    for (const ws of activeWorkspaces) {
+                        const wsId = String(ws.id || ws._id || '');
+                        if (!wsId) continue;
+                        try {
+                            const res = await fetch(`/api/workspaces/${wsId}/tasks`);
+                            const data = await res.json();
+                            if (cancelled) return;
+                            const validData = Array.isArray(data) ? data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)) : [];
+                            scanWorkspaceNotifications(ws, validData, hubCardsSnapshotRef.current[wsId] || [], initial);
+                            hubCardsSnapshotRef.current[wsId] = validData;
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
+                };
+                pollAllProjects(true);
+                const interval = setInterval(() => pollAllProjects(false), 20000);
+                return () => {
+                    cancelled = true;
+                    clearInterval(interval);
+                };
+            }, [accessibleWorkspaces, scanWorkspaceNotifications, user?.email]);
+
+            const homeStyle = user?.homeBackgroundImage ? {
+                backgroundImage: `linear-gradient(rgba(255,255,255,0.84), rgba(255,255,255,0.9)), url(${user.homeBackgroundImage})`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center'
+            } : {};
 
             return (
-                <div className="h-screen bg-white animate-fade-in relative flex flex-col text-black">
+                <div className="h-screen bg-white animate-fade-in relative flex flex-col text-black" style={homeStyle}>
                 {pinPrompt.isOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-xl z-[9999] flex items-center justify-center p-4 animate-fade-in">
                     <div className="max-w-[320px] w-[95%] mx-auto bg-white p-6 md:p-8 rounded-[2rem] shadow-2xl text-center">
@@ -145,7 +345,80 @@ window.WorkspaceHub = ({ onSelect, onLogout, user, theme, onThemeChange, onUpdat
                                 </button>
                             )}
                         </div>
-                        <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} />
+                        <div className="flex items-center gap-4 relative">
+                            <div
+                                ref={notificationDropdownRef}
+                                className={`p-2.5 rounded-xl transition cursor-pointer relative ${isDarkHeader ? 'bg-white/10 hover:bg-white/20' : 'bg-black/5 hover:bg-black/10'}`}
+                                onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+                            >
+                                <window.Icon name="bell" size={18} className={isDarkHeader ? 'text-white' : 'text-black'} />
+                                {globalNotifications.length > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">
+                                        {globalNotifications.length > 9 ? '9+' : globalNotifications.length}
+                                    </span>
+                                )}
+                                {showNotificationDropdown && (
+                                    <div
+                                        className="absolute top-full right-0 mt-2 w-[min(23rem,calc(100vw-2rem))] max-w-[23rem] bg-white rounded-2xl shadow-2xl border border-gray-100 z-[150] animate-pop text-black overflow-hidden flex flex-col"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="flex justify-between items-center px-4 py-3 border-b border-gray-100 bg-gray-50/80">
+                                            <p className="text-xs font-black uppercase tracking-widest text-gray-500">
+                                                {t('labels.workspace_notifications') || 'Notifications'}
+                                            </p>
+                                            {globalNotifications.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setGlobalNotifications(window.NTNotifications?.clearAll?.() || []);
+                                                    }}
+                                                >
+                                                    {t('labels.clear_workspace_notifications') || 'Clear all'}
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="max-h-72 overflow-y-auto no-scrollbar p-2">
+                                            {globalNotifications.length === 0 ? (
+                                                <p className="text-xs text-gray-400 text-center py-6 px-3">
+                                                    {t('labels.no_workspace_notifications') || 'No notifications yet.'}
+                                                </p>
+                                            ) : (
+                                                globalNotifications.map((n) => (
+                                                    <div
+                                                        key={`${n.workspaceId}-${n.id}`}
+                                                        className="group flex gap-2 p-2.5 rounded-xl hover:bg-gray-50 border border-transparent hover:border-gray-100 transition text-left"
+                                                    >
+                                                        <div className="flex-1 min-w-0">
+                                                            {n.workspaceName ? (
+                                                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 truncate mb-1">{n.workspaceName}</p>
+                                                            ) : null}
+                                                            <p className="text-[11px] text-gray-800 leading-snug">{n.message}</p>
+                                                            {n.createdAt ? (
+                                                                <p className="text-[9px] text-gray-400 mt-1">{new Date(n.createdAt).toLocaleString()}</p>
+                                                            ) : null}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            title={t('actions.remove') || 'Remove'}
+                                                            className="shrink-0 p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setGlobalNotifications(window.NTNotifications?.remove?.(n) || []);
+                                                            }}
+                                                        >
+                                                            <window.Icon name="x" size={14} />
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <window.ProfileMenu user={user} onLogout={onLogout} onThemeChange={onThemeChange} currentTheme={theme} onUpdateUser={onUpdateUser} onOpenProfile={onOpenProfile} />
+                        </div>
                     </nav>
                     {showUserManagement && <window.UserManagement user={user} adminEmail={adminEmail} onClose={() => setShowUserManagement(false)} />}
                     <style>{`

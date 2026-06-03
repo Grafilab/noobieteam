@@ -65,7 +65,7 @@ window.ModernDocEditor = ({ initialContent, editable, onChange }) => {
     );
 };
 
-window.DocTab = ({ workspaceId, user }) => {
+window.DocTab = ({ workspaceId, user, onLogActivity }) => {
     const [apiTab, setApiTab] = React.useState('Body');
     const [apiResponse, setApiResponse] = React.useState(null);
     const [isApiLoading, setIsApiLoading] = React.useState(false);
@@ -230,22 +230,32 @@ window.DocTab = ({ workspaceId, user }) => {
             const saved = await res.json();
             setFolders(prev => [...prev, { ...saved, id: saved._id || saved.id }]);
             setExpandedFolders(prev => ({ ...prev, [saved._id || saved.id]: true }));
+            onLogActivity?.('Created folder', 'folder', name);
             showToast("Folder created.");
         });
     };
 
     const deleteFolder = async (id) => {
         showConfirm("Destroy Folder", "PERMANENTLY erase this folder? Documents inside will be moved to root.", async () => {
+            const target = folders.find(f => f.id === id || f._id === id);
             await fetch(`/api/folders/${id}`, { method: 'DELETE' });
             setFolders(prev => prev.filter(f => (f.id !== id && f._id !== id)));
             setDocs(prev => prev.map(d => d.folderId === id ? { ...d, folderId: null } : d));
+            onLogActivity?.('Deleted folder', 'folder', target?.name);
             showToast("Folder destroyed.");
         });
     };
 
     const moveToFolder = async (docId, folderId) => {
+        const doc = docs.find(d => d.id === docId || d._id === docId);
+        const folderName = folderId ? (folders.find(f => f.id === folderId || f._id === folderId)?.name || folderId) : null;
         setDocs(prev => prev.map(d => (d.id === docId || d._id === docId) ? { ...d, folderId } : d));
         await fetch(`/api/docs/${docId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ folderId }) });
+        onLogActivity?.(
+            folderName ? `Moved ${doc?.type === 'API' ? 'API endpoint' : 'document'} to folder "${folderName}"` : `Moved ${doc?.type === 'API' ? 'API endpoint' : 'document'} out of folder`,
+            doc?.type === 'API' ? 'api' : 'doc',
+            doc?.title
+        );
         showToast("Document moved.");
     };
 
@@ -344,6 +354,7 @@ window.DocTab = ({ workspaceId, user }) => {
                 }
                 
                 setDocs(prev => [...prev, ...allImported]);
+                onLogActivity?.('Imported Postman collection', 'api', name);
                 showToast(t('alerts.postman_import_success'));
             } catch (err) {
                 console.error(err);
@@ -366,6 +377,7 @@ window.DocTab = ({ workspaceId, user }) => {
             const normalizedSaved = { ...saved, id: saved.id || saved._id };
             setDocs(prev => [...prev, normalizedSaved]);
             setSelectedDocId(normalizedSaved.id);
+            onLogActivity?.(type === 'API' ? 'Created API endpoint' : 'Created document', type === 'API' ? 'api' : 'doc', title);
             showToast("Document initialized.");
         });
     };
@@ -388,10 +400,14 @@ window.DocTab = ({ workspaceId, user }) => {
         if (!selectedDocIds || selectedDocIds.size === 0) return;
         showConfirm(t('actions.bulk_erase'), t('alerts.bulk_erase_confirm', { count: selectedDocIds.size }), async () => {
             const arr = Array.from(selectedDocIds);
+            const targets = docs.filter(d => arr.includes(d.id || d._id));
             await fetch('/api/docs/bulk', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ docIds: arr }) });
             setDocs(prev => prev.filter(d => !arr.includes(d.id || d._id)));
             if (selectedDocId && arr.includes(selectedDocId)) setSelectedDocId(null);
             setSelectedDocIds(new Set());
+            targets.forEach(doc => {
+                onLogActivity?.(doc.type === 'API' ? 'Deleted API endpoint' : 'Deleted document', doc.type === 'API' ? 'api' : 'doc', doc.title);
+            });
             showToast(t('alerts.docs_erased', { count: arr.length }));
         });
     };
@@ -399,8 +415,17 @@ window.DocTab = ({ workspaceId, user }) => {
     const bulkMove = async (targetFolderId) => {
         if (!selectedDocIds || selectedDocIds.size === 0) return;
         const arr = Array.from(selectedDocIds);
+        const targets = docs.filter(d => arr.includes(d.id || d._id));
+        const folderName = targetFolderId ? (folders.find(f => f.id === targetFolderId || f._id === targetFolderId)?.name || targetFolderId) : null;
         await fetch('/api/docs/bulk-move', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ docIds: arr, folderId: targetFolderId }) });
         setDocs(prev => prev.map(d => arr.includes(d.id || d._id) ? { ...d, folderId: targetFolderId } : d));
+        targets.forEach(doc => {
+            onLogActivity?.(
+                folderName ? `Moved ${doc.type === 'API' ? 'API endpoint' : 'document'} to folder "${folderName}"` : `Moved ${doc.type === 'API' ? 'API endpoint' : 'document'} out of folder`,
+                doc.type === 'API' ? 'api' : 'doc',
+                doc.title
+            );
+        });
         setSelectedDocIds(new Set());
         setShowBulkMoveDropdown(false);
         showToast(t('alerts.docs_moved', { count: arr.length }));
@@ -409,9 +434,11 @@ window.DocTab = ({ workspaceId, user }) => {
     const deleteDoc = async (id) => {
         if (!id) return;
         showConfirm("Destroy Document", "PERMANENTLY erase this document?", async () => {
+            const target = docs.find(d => d.id === id || d._id === id);
             await fetch(`/api/docs/${id}`, { method: 'DELETE' });
             setDocs(prev => prev.filter(d => (d.id !== id && d._id !== id)));
             if (selectedDocId === id) setSelectedDocId(null);
+            onLogActivity?.(target?.type === 'API' ? 'Deleted API endpoint' : 'Deleted document', target?.type === 'API' ? 'api' : 'doc', target?.title);
             showToast("Document destroyed.");
         });
     };
@@ -559,7 +586,7 @@ window.DocTab = ({ workspaceId, user }) => {
             </div>
             </div>
             {isAnySelected && (
-                        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur shadow-2xl border border-gray-200 rounded-full px-6 py-3 flex items-center gap-4 z-[2000] animate-fly-up-fade">
+                        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur shadow-2xl border border-gray-200 rounded-full px-6 py-3 flex items-center gap-4 z-[2000] animate-fade-in">
                             <span className="text-xs font-black text-gray-800">{t('labels.selected_count', { count: selectedDocIds.size })}</span>
                             <div className="h-4 w-px bg-gray-300"></div>
                             

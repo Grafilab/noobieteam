@@ -1,4 +1,4 @@
-window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
+window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser, onLogActivity }) {
 
     
     const { showPrompt, showAlert, showConfirm } = window.useModals();
@@ -21,7 +21,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             const updatedSecrets = secrets.concat([{ id: window.generateId('sec'), service: newSecret.service, url: newSecret.url, value: encrypted }]);
             
             await onUpdate({ secrets: updatedSecrets });
-            
+            onLogActivity?.('Added secret', 'vault', newSecret.service);
             setSecrets(updatedSecrets);
             setNewSecret({ service: '', account: '', password: '', url: '' });
             setIsAdding(false);
@@ -122,8 +122,10 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
 
     const deleteSecret = async (id) => {
         showConfirm(t('actions.delete_mission'), t('actions.erase_completely'), async () => {
+            const target = secrets.find(s => s.id === id || s._id === id);
             const updated = secrets.filter(s => (s.id !== id && s._id !== id));
             await onUpdate({ secrets: updated });
+            onLogActivity?.('Deleted secret', 'vault', target?.service);
             setSecrets(updated);
             showToast(t('alerts.secret_purged'));
         });
@@ -147,7 +149,13 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
             </header>
 
             <div className="bg-white border border-gray-100 rounded-[2.5rem] shadow-xl overflow-hidden">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full text-left border-collapse table-fixed">
+                    <colgroup>
+                        <col className="w-[30%]" />
+                        <col className="w-[30%]" />
+                        <col className="w-[22%]" />
+                        <col className="w-[18%]" />
+                    </colgroup>
                     <thead>
                         <tr className="bg-gray-50/50 border-b border-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-400">
                             <th className="px-8 py-6">{t('labels.service')}</th>
@@ -156,6 +164,15 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
                             <th className="px-8 py-6 text-right">{t('labels.actions_col')}</th>
                         </tr>
                     </thead>
+                </table>
+                <div className="max-h-[60vh] overflow-y-auto">
+                <table className="w-full text-left border-collapse table-fixed">
+                    <colgroup>
+                        <col className="w-[30%]" />
+                        <col className="w-[30%]" />
+                        <col className="w-[22%]" />
+                        <col className="w-[18%]" />
+                    </colgroup>
                     <tbody className="divide-y divide-gray-50">
                         {secrets.map(s => (
                             <tr key={s.id || s._id} className="hover:bg-gray-50/50 transition-colors group">
@@ -190,6 +207,7 @@ window.VaultTab = function({ workspace, user, onUpdate, onUpdateUser }) {
                         ))}
                     </tbody>
                 </table>
+                </div>
                 {secrets.length === 0 && (
                     <div className="py-20 text-center flex flex-col items-center">
                         <window.Icon name="lock" size={48} className="text-gray-100 mb-4" />

@@ -63,12 +63,14 @@ window.Avatar = ({ label, src, size = "md", active, story, onClick }) => {
     );
 };
 
-window.WYSIWYG = ({ value, onChange, id }) => {
+window.WYSIWYG = ({ value, onChange, id, onBlur, autoFocus = false }) => {
     const editorRef = React.useRef(null);
     const quillRef = React.useRef(null);
     const onChangeRef = React.useRef(onChange);
+    const onBlurRef = React.useRef(onBlur);
     
     React.useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+    React.useEffect(() => { onBlurRef.current = onBlur; }, [onBlur]);
 
     React.useEffect(() => {
         if (editorRef.current && !quillRef.current) {
@@ -81,6 +83,9 @@ window.WYSIWYG = ({ value, onChange, id }) => {
                 const html = quillRef.current.root.innerHTML;
                 if (onChangeRef.current) onChangeRef.current(html);
             });
+            quillRef.current.on('selection-change', (range, oldRange) => {
+                if (!range && oldRange && onBlurRef.current) onBlurRef.current();
+            });
         }
     }, []);
 
@@ -89,6 +94,12 @@ window.WYSIWYG = ({ value, onChange, id }) => {
             quillRef.current.root.innerHTML = value || '';
         }
     }, [id]);
+
+    React.useEffect(() => {
+        if (autoFocus && quillRef.current) {
+            requestAnimationFrame(() => quillRef.current.focus());
+        }
+    }, [autoFocus]);
 
     return <div className="editor-wrapper"><div ref={editorRef} style={{ height: '120px' }}></div></div>;
 };
