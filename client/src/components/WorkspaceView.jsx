@@ -1194,9 +1194,9 @@ User Request: ${aiInput}` : aiInput;
                                     return { id: c.id || c._id, orderIndex: i, columnId: c.columnId };
                                 });
                                 
-                                setCards(newCards);
                                 const moveRes = await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
                                 const movedTask = await moveRes.json().catch(() => null);
+                                setCards(newCards => newCards.map(c => c.id === movedTask.id ? { ...(movedTask || c), id: c.id || movedTask?.id || movedTask?._id } : c));
                                 if (moveRes.ok) emitCardMoveNotification(draggedCard, destination.droppableId, movedTask || {});
                                 
                                 const movedCard = cards.find(c => c.id === draggableId || c._id === draggableId);
