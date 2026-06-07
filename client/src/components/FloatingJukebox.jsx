@@ -86,6 +86,55 @@
         } catch (_) {}
     }
 
+    function normalizeAudioUrl(value) {
+        if (typeof value === 'string') return value.trim();
+        if (value == null) return '';
+        try {
+            return String(value).trim();
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function safeCallParser(parser, url) {
+        if (typeof parser !== 'function') return null;
+        try {
+            const result = parser(url);
+            return result ? String(result).trim() : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function extractYoutubeId(url) {
+        const globalResult = safeCallParser(window.extractYoutubeId, url);
+        if (globalResult) return globalResult;
+        const cleanUrl = normalizeAudioUrl(url).replace(/['"]/g, '');
+        if (!cleanUrl) return null;
+        const match = cleanUrl.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/|live\/)([^#\&\?\/]*).*/);
+        return match && match[2].length === 11 ? match[2] : null;
+    }
+
+    function extractPlaylistId(url) {
+        const globalResult = safeCallParser(window.extractPlaylistId, url);
+        if (globalResult) return globalResult;
+        const cleanUrl = normalizeAudioUrl(url).replace(/['"]/g, '');
+        if (!cleanUrl) return null;
+        const match = cleanUrl.match(/[&?]list=([^&]+)/i);
+        return match ? match[1] : null;
+    }
+
+    function extractSpotifyPlaylistId(url) {
+        const globalResult = safeCallParser(window.extractSpotifyPlaylistId, url);
+        if (globalResult) return globalResult;
+        const cleanUrl = normalizeAudioUrl(url).replace(/['"]/g, '');
+        if (!cleanUrl) return null;
+        const uriMatch = cleanUrl.match(/^spotify:playlist:([a-zA-Z0-9]+)$/i);
+        if (uriMatch) return uriMatch[1];
+        const webMatch = cleanUrl.match(/spotify\.com\/(?:embed\/)?playlist\/([a-zA-Z0-9]+)(?:\?|$|\/)/i);
+        return webMatch ? webMatch[1] : null;
+    }
+
     /** Default placement: bottom-right for a typical maximized jukebox size. */
     function defaultBottomRight() {
         const w = 56;
@@ -98,14 +147,15 @@
         const { t } = window.useTranslation ? window.useTranslation() : { t: (k) => k };
         const [input, setInput] = React.useState('');
         const [history, setHistory] = React.useState(readStoredHistory);
-        const vId = window.extractYoutubeId(url);
-        const pId = window.extractPlaylistId(url);
+        const currentUrl = normalizeAudioUrl(url);
+        const vId = extractYoutubeId(currentUrl);
+        const pId = extractPlaylistId(currentUrl);
         const youtubeEmbedUrl = pId
             ? `https://www.youtube.com/embed/${vId || 'videoseries'}?enablejsapi=1&list=${encodeURIComponent(pId)}&origin=${encodeURIComponent(window.location.origin)}`
             : vId
                 ? `https://www.youtube.com/embed/${encodeURIComponent(vId)}?enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`
                 : '';
-        const spotifyPlaylistId = window.extractSpotifyPlaylistId(url);
+        const spotifyPlaylistId = extractSpotifyPlaylistId(currentUrl);
         const spotifyEmbedUrl = spotifyPlaylistId
             ? `https://open.spotify.com/embed/playlist/${encodeURIComponent(spotifyPlaylistId)}?utm_source=generator`
             : '';
@@ -132,9 +182,9 @@
         }, [snapFlying]);
 
         React.useEffect(() => {
-            if (url) setInput(url);
+            if (currentUrl) setInput(currentUrl);
             setIsPaused(true);
-        }, [url]);
+        }, [currentUrl]);
 
         /**
          * Minimize without the “collapse to top-left” illusion: place the 56×56 circle so its center
@@ -282,7 +332,7 @@
 
         React.useLayoutEffect(() => {
             scheduleRefitAndSnapToEdge();
-        }, [url, isMinimized, scheduleRefitAndSnapToEdge]);
+        }, [currentUrl, isMinimized, scheduleRefitAndSnapToEdge]);
 
         React.useEffect(() => {
             const onResize = () => scheduleRefitAndSnapToEdge();
@@ -357,7 +407,7 @@
         
         const playUrl = React.useCallback(
             (nextUrl) => {
-                const cleanUrl = nextUrl.trim();
+                const cleanUrl = normalizeAudioUrl(nextUrl);
                 if (!cleanUrl) return;
                 setInput(cleanUrl);
                 setUrl(cleanUrl);
@@ -538,7 +588,7 @@
             );
         };
 
-        if (!url && !isMinimized) {
+        if (!currentUrl && !isMinimized) {
             return (
                 <div
                     ref={rootRef}
@@ -564,7 +614,7 @@
             );
         }
 
-        if (isMinimized && !url) {
+        if (isMinimized && !currentUrl) {
             return (
                 <div
                     ref={rootRef}
