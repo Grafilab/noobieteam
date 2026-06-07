@@ -56,6 +56,59 @@ router.post('/workspaces/:wsId/tasks', async (req, res) => {
 });
 
 
+// --- Aggregated "My Tasks" across all boards ---
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@noobieteam.ai';
+
+router.get('/my-tasks', async (req, res) => {
+  try {
+    const userEmail = req.headers['user-email'] || req.query.email;
+    if (!userEmail) return res.status(400).json({ error: 'Missing user email' });
+
+    const allWorkspaces = await Workspace.find({ archived: { $ne: true } });
+    const isAdmin = userEmail === ADMIN_EMAIL;
+
+    const visibleWorkspaces = allWorkspaces.filter(w => {
+      if (isAdmin) return true;
+      const memberEmails = (w.members || []).map(m => (typeof m === 'string' ? m : m && m.userId)).filter(Boolean);
+      return memberEmails.includes(userEmail);
+    });
+
+    const wsById = {};
+    visibleWorkspaces.forEach(w => { wsById[w._id.toString()] = w; });
+    const wsIds = Object.keys(wsById);
+
+    if (wsIds.length === 0) return res.json([]);
+
+    const tasks = await Task.find({ workspaceId: { $in: wsIds }, archived: { $ne: true } }).sort({ updatedAt: -1 });
+
+    const enriched = tasks.map(task => {
+      const ws = wsById[task.workspaceId];
+      const colId = task.columnId || task.col;
+      let columnTitle = 'Unassigned';
+      if (colId === 'backlog') {
+        columnTitle = 'Backlog';
+      } else if (ws && Array.isArray(ws.columns)) {
+        const col = ws.columns.find(c => c.id === colId);
+        if (col && col.title) columnTitle = col.title;
+      }
+      const obj = task.toJSON();
+      return {
+        ...obj,
+        id: task._id.toString(),
+        workspaceId: task.workspaceId,
+        workspaceName: ws ? ws.name : 'Unknown Board',
+        workspaceSlug: ws ? ws.slug : null,
+        columnId: colId,
+        columnTitle
+      };
+    });
+
+    res.json(enriched);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- Bulk Operations ---
 router.put('/workspaces/:wsId/tasks/bulk-archive', async (req, res) => {
   try {
