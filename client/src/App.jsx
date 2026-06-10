@@ -334,9 +334,13 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                 const params = new URLSearchParams(window.location.search);
                 const deepDocId = params.get('doc');
                 if (deepDocId && (data.docs || []).some(d => (d.id === deepDocId || d._id === deepDocId))) {
+                    const deepDoc = (data.docs || []).find(d => d.id === deepDocId || d._id === deepDocId);
                     setSelectedDocId(deepDocId);
-                    const sub = (data.subfolders || []).find(f => (data.docs || []).some(d => d.folderId === (f.id || f._id) && (d.id === deepDocId || d._id === deepDocId)));
-                    if (sub) setExpandedFolders(prev => ({ ...prev, [sub.id || sub._id]: true }));
+                    if (deepDoc?.folderId) {
+                        setSelectedFolderId(deepDoc.folderId);
+                        const sub = (data.subfolders || []).find(f => (f.id || f._id) === deepDoc.folderId);
+                        if (sub) setExpandedFolders(prev => ({ ...prev, [sub.id || sub._id]: true }));
+                    }
                 }
             })
             .catch(err => setError(err.message))
@@ -389,6 +393,34 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
     const activeDoc = rawActiveDoc && unlockedDocs[activeDocId] ? { ...rawActiveDoc, ...unlockedDocs[activeDocId] } : rawActiveDoc;
     const activeFolder = selectedFolderId && !selectedDocId ? (folder?.id === selectedFolderId || folder?._id === selectedFolderId ? folder : subfolders.find(f => (f.id === selectedFolderId || f._id === selectedFolderId))) : null;
     const isHome = activeFolder && (activeFolder.id === (folder?.id || folder?._id) || activeFolder._id === (folder?.id || folder?._id));
+    const activeFolderId = activeFolder ? (activeFolder.id || activeFolder._id) : null;
+    const folderDocs = activeFolderId ? docs.filter(d => d.folderId === activeFolderId) : [];
+    const stripHtml = (html) => (html || '').replace(/<(.|\n)*?>/g, '').trim();
+    const hasFolderDescription = !!stripHtml(activeFolder?.description);
+    const hasDocContent = !!stripHtml(activeDoc?.content);
+    const rootFolderId = folder?.id || folder?._id;
+    const docFolder = activeDoc?.folderId
+        ? (activeDoc.folderId === rootFolderId ? folder : subfolders.find(f => (f.id || f._id) === activeDoc.folderId))
+        : folder;
+    const isSubfolderDoc = !!(docFolder && docFolder.parentId);
+    const siblingDocs = activeDoc?.folderId ? docs.filter(d => d.folderId === activeDoc.folderId && (d.id || d._id) !== activeDocId) : [];
+    const readmeProseClass = 'readme-preview ql-editor prose prose-sm md:prose-base max-w-none prose-headings:font-black prose-headings:tracking-tight prose-h1:text-2xl prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-3 prose-h2:pb-2 prose-h2:border-b prose-h2:border-gray-100 prose-h3:mt-6 prose-p:text-gray-600 prose-li:text-gray-600 prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline prose-pre:bg-gray-900 prose-pre:rounded-2xl prose-pre:text-gray-100 prose-code:text-blue-600 prose-code:bg-blue-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-blockquote:border-l-blue-500 prose-blockquote:text-gray-500 prose-blockquote:not-italic prose-img:rounded-2xl';
+
+    const PreviewEmptyPlaceholder = ({ label, icon = 'file-text', title, description }) => (
+        <div className="bg-white border border-gray-100 rounded-[2rem] overflow-hidden shadow-sm">
+            <div className="px-6 md:px-10 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
+                <window.Icon name={icon} size={14} className="text-gray-400" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</span>
+            </div>
+            <div className="px-6 md:px-10 py-12 md:py-16 text-center">
+                <div className="w-14 h-14 rounded-2xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center mx-auto mb-4">
+                    <window.Icon name={icon} size={24} className="text-gray-300" />
+                </div>
+                <p className="text-sm font-bold text-gray-400">{title}</p>
+                {description && <p className="text-xs text-gray-300 mt-1.5 font-medium max-w-xs mx-auto">{description}</p>}
+            </div>
+        </div>
+    );
 
     return (
         <div className="min-h-screen bg-white flex text-black font-sans">
@@ -430,7 +462,7 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                                             {docs.filter(d => d.folderId === (sub.id || sub._id)).map(doc => {
                                                 const docId = doc.id || doc._id;
                                                 return (
-                                                    <div key={docId} onClick={() => { setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`group flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-blue-50 text-blue-600 font-bold border border-gray-200' : 'hover:bg-gray-100 text-gray-600 font-medium border border-transparent'}`}>
+                                                    <div key={docId} onClick={() => { setSelectedFolderId(sub.id || sub._id); setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`group flex items-center justify-between p-2 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-blue-50 text-blue-600 font-bold border border-gray-200' : 'hover:bg-gray-100 text-gray-600 font-medium border border-transparent'}`}>
                                                         <div className="flex items-center gap-2 truncate">
                                                             <window.Icon name={doc.type === 'API' ? "zap" : "file-text"} size={14} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                                             <span className="text-[11px] truncate">{doc.title || t('labels.untitled')}</span>
@@ -446,7 +478,7 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                             {docs.filter(d => d.folderId === (folder?.id || folder?._id)).map(doc => {
                                 const docId = doc.id || doc._id;
                                 return (
-                                    <div key={docId} onClick={() => { setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-white shadow-sm text-blue-600 font-bold border border-gray-200' : 'hover:bg-gray-100 text-gray-600 font-medium border border-transparent'}`}>
+                                    <div key={docId} onClick={() => { setSelectedFolderId(folder?.id || folder?._id); setSelectedDocId(docId); setShowMobileSidebar(false); }} className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition ${selectedDocId === docId ? 'bg-white shadow-sm text-blue-600 font-bold border border-gray-200' : 'hover:bg-gray-100 text-gray-600 font-medium border border-transparent'}`}>
                                         {doc.type === 'API' ? (
                                             <span className={`text-[9px] font-black w-10 text-center rounded px-1 py-0.5 ${doc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : doc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : doc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{doc.apiSpec?.method}</span>
                                         ) : (
@@ -484,7 +516,7 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                         <window.Icon name="link" size={16} /> <span className="hidden md:inline">{t('actions.copy_link') || 'Copy Link'}</span>
                     </button>
                 </header>
-                <div className="flex-1 overflow-y-auto p-4 md:p-10 bg-white">
+                <div className={`flex-1 overflow-y-auto p-4 md:p-10 ${(activeFolder && !activeDoc) || activeDoc ? 'bg-[#FAFAFA]' : 'bg-white'}`}>
                     {isDocLocked ? (
                         <div className="max-w-md mx-auto mt-10 md:mt-20 animate-fade-in">
                             <div className="bg-gray-50 border border-gray-200 rounded-[2rem] p-8 md:p-10 text-center shadow-sm">
@@ -617,26 +649,191 @@ window.PublicDocsView = ({ wsPath, folderName }) => {
                             })()}
                         </div>
                         ) : (
-                            <div className="max-w-4xl mx-auto">
-                                <div className="ql-editor prose max-w-none" dangerouslySetInnerHTML={{__html: activeDoc.content}}></div>
+                            <div className="max-w-3xl mx-auto animate-fade-in space-y-6 pb-10">
+                                <div className="bg-white border border-gray-100 rounded-[2rem] p-8 md:p-10 shadow-sm">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                            <window.Icon name="file-text" size={22} className="text-blue-500" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            {docFolder && (
+                                                <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5 flex-wrap">
+                                                    {isSubfolderDoc && (
+                                                        <>
+                                                            <button onClick={() => { setSelectedFolderId(rootFolderId); setSelectedDocId(null); }} className="hover:underline">{folder?.name}</button>
+                                                            <span className="text-gray-300">/</span>
+                                                        </>
+                                                    )}
+                                                    <button onClick={() => { setSelectedFolderId(docFolder.id || docFolder._id); setSelectedDocId(null); }} className="hover:underline">{docFolder.name}</button>
+                                                </p>
+                                            )}
+                                            <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-gray-900">{activeDoc.title || t('labels.untitled')}</h1>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {hasDocContent ? (
+                                    <div className="bg-white border border-gray-100 rounded-[2rem] overflow-hidden shadow-sm">
+                                        <div className="px-6 md:px-10 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
+                                            <window.Icon name="file-text" size={14} className="text-gray-400" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">{t('labels.document') || 'Document'}</span>
+                                        </div>
+                                        <div className="px-6 md:px-10 py-8 md:py-10">
+                                            <div className={readmeProseClass} dangerouslySetInnerHTML={{__html: activeDoc.content}} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <PreviewEmptyPlaceholder
+                                        label={t('labels.document') || 'Document'}
+                                        icon="file-text"
+                                        title={t('labels.no_content_yet') || 'No content yet'}
+                                        description={t('labels.document_empty_hint') || 'This document has no written content.'}
+                                    />
+                                )}
+
+                                {siblingDocs.length > 0 && (
+                                    <div className="bg-white border border-gray-100 rounded-[2rem] p-6 md:p-8 shadow-sm">
+                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4">
+                                            {t('labels.more_in_section') || `More in ${docFolder?.name || 'this section'}`}
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {siblingDocs.map(doc => {
+                                                const docId = doc.id || doc._id;
+                                                return (
+                                                    <button
+                                                        key={docId}
+                                                        onClick={() => setSelectedDocId(docId)}
+                                                        className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition text-left group"
+                                                    >
+                                                        <window.Icon name="file-text" size={16} className="text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                                                        <span className="text-sm font-bold text-gray-700 group-hover:text-blue-700 truncate">{doc.title || t('labels.untitled')}</span>
+                                                        {doc.passwordProtected && <window.Icon name="lock" size={12} className="text-gray-400 flex-shrink-0 ml-auto" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )
                     ) : activeFolder ? (
-                        (activeFolder.description && activeFolder.description.replace(/<(.|\n)*?>/g, '').trim()) ? (
-                            <div className="max-w-4xl mx-auto animate-fade-in">
-                                {isHome && (
-                                    <div className="mb-8">
-                                        <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-1">{t('labels.home') || 'Home'}</p>
-                                        <h1 className="text-3xl font-black tracking-tighter">{activeFolder.name}</h1>
+                            <div className="max-w-3xl mx-auto animate-fade-in space-y-6 pb-10">
+                                <div className="bg-white border border-gray-100 rounded-[2rem] p-8 md:p-10 shadow-sm">
+                                    <div className="flex items-start gap-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                            <window.Icon name={isHome ? 'home' : 'folder-open'} size={22} className="text-blue-500" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-2">
+                                                {isHome ? (t('labels.home') || 'Home') : (t('labels.folder_overview') || 'Folder Overview')}
+                                            </p>
+                                            <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-gray-900 mb-2">{activeFolder.name}</h1>
+                                            {isHome && workspace?.name ? (
+                                                <p className="text-sm text-gray-500 font-medium">{workspace.name}</p>
+                                            ) : !isHome && folder?.name && (
+                                                <p className="text-sm text-gray-500 font-medium flex items-center gap-1.5">
+                                                    <button onClick={() => { setSelectedFolderId(rootFolderId); setSelectedDocId(null); }} className="hover:text-blue-600 transition">{folder.name}</button>
+                                                    <span className="text-gray-300">/</span>
+                                                    <span>{activeFolder.name}</span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 mt-6 pt-6 border-t border-gray-100">
+                                        {folderDocs.length > 0 && (
+                                            <span className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-500">
+                                                {folderDocs.length} {folderDocs.length === 1 ? 'document' : 'documents'}
+                                            </span>
+                                        )}
+                                        {isHome && subfolders.length > 0 && (
+                                            <span className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-500">
+                                                {subfolders.length} {subfolders.length === 1 ? 'section' : 'sections'}
+                                            </span>
+                                        )}
+                                        {isHome && folder?.environments?.length > 0 && (
+                                            <span className="px-3 py-1.5 bg-purple-50 border border-purple-100 rounded-lg text-[10px] font-black uppercase tracking-widest text-purple-600">
+                                                {folder.environments.length} {folder.environments.length === 1 ? 'environment' : 'environments'}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {hasFolderDescription ? (
+                                    <div className="bg-white border border-gray-100 rounded-[2rem] overflow-hidden shadow-sm">
+                                        <div className="px-6 md:px-10 py-4 border-b border-gray-100 bg-gray-50/60 flex items-center gap-2">
+                                            <window.Icon name="file-text" size={14} className="text-gray-400" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">README</span>
+                                        </div>
+                                        <div className="px-6 md:px-10 py-8 md:py-10">
+                                            <div className={readmeProseClass} dangerouslySetInnerHTML={{__html: activeFolder.description}} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <PreviewEmptyPlaceholder
+                                        label="README"
+                                        icon="book-open"
+                                        title={t('labels.readme_empty') || 'No README yet'}
+                                        description={isHome
+                                            ? (t('labels.readme_empty_home_hint') || 'Add an overview to introduce this documentation.')
+                                            : (t('labels.readme_empty_folder_hint') || 'Add an overview to describe this section.')}
+                                    />
+                                )}
+
+                                {(folderDocs.length > 0 || (isHome && subfolders.length > 0)) && (
+                                    <div className="bg-white border border-gray-100 rounded-[2rem] p-6 md:p-8 shadow-sm">
+                                        <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-4">
+                                            {t('labels.in_this_section') || 'In this section'}
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {isHome && subfolders.map(sub => {
+                                                const subId = sub.id || sub._id;
+                                                const subDocCount = docs.filter(d => d.folderId === subId).length;
+                                                return (
+                                                    <button
+                                                        key={subId}
+                                                        onClick={() => { setSelectedFolderId(subId); setSelectedDocId(null); setExpandedFolders(prev => ({ ...prev, [subId]: true })); }}
+                                                        className="w-full flex items-center justify-between p-4 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition text-left group"
+                                                    >
+                                                        <div className="flex items-center gap-3 min-w-0">
+                                                            <window.Icon name="folder" size={16} className="text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                                                            <span className="text-sm font-bold text-gray-700 group-hover:text-blue-700 truncate">{sub.name}</span>
+                                                        </div>
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 flex-shrink-0 ml-3">{subDocCount} docs</span>
+                                                    </button>
+                                                );
+                                            })}
+                                            {folderDocs.map(doc => {
+                                                const docId = doc.id || doc._id;
+                                                return (
+                                                    <button
+                                                        key={docId}
+                                                        onClick={() => { setSelectedFolderId(activeFolderId); setSelectedDocId(docId); }}
+                                                        className="w-full flex items-center gap-3 p-4 rounded-xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50/50 transition text-left group"
+                                                    >
+                                                        {doc.type === 'API' ? (
+                                                            <span className={`text-[9px] font-black w-10 text-center rounded px-1 py-0.5 flex-shrink-0 ${doc.apiSpec?.method === 'POST' ? 'bg-emerald-100 text-emerald-700' : doc.apiSpec?.method === 'GET' ? 'bg-blue-100 text-blue-700' : doc.apiSpec?.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{doc.apiSpec?.method}</span>
+                                                        ) : (
+                                                            <window.Icon name="file-text" size={16} className="text-gray-400 group-hover:text-blue-500 flex-shrink-0" />
+                                                        )}
+                                                        <span className="text-sm font-bold text-gray-700 group-hover:text-blue-700 truncate">{doc.title || t('labels.untitled')}</span>
+                                                        {doc.passwordProtected && <window.Icon name="lock" size={12} className="text-gray-400 flex-shrink-0 ml-auto" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
-                                <div className="ql-editor prose max-w-none" dangerouslySetInnerHTML={{__html: activeFolder.description}}></div>
+
+                                {!isHome && (
+                                    <button
+                                        onClick={() => { setSelectedFolderId(rootFolderId); setSelectedDocId(null); }}
+                                        className="w-full flex items-center justify-center gap-2 p-4 rounded-[2rem] border border-dashed border-gray-200 text-sm font-bold text-gray-400 hover:text-blue-600 hover:border-blue-200 hover:bg-white transition"
+                                    >
+                                        <window.Icon name="arrow-left" size={16} />
+                                        {t('labels.back_to_home') || `Back to ${folder?.name || 'Home'}`}
+                                    </button>
+                                )}
                             </div>
-                        ) : (
-                            <div className="text-center py-20 text-gray-400 text-sm font-bold">
-                                {isHome ? (t('labels.home_empty') || 'Welcome. Select a document from the sidebar to get started.') : 'No content available.'}
-                            </div>
-                        )
                     ) : (
                         <div className="text-center py-20 text-gray-400 text-sm font-bold">No content available.</div>
                     )}
