@@ -196,7 +196,7 @@ function readWorkspaceNotificationsForWorkspace(ws) {
     return [];
 }
 
-window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, theme, onUpdateUser, onOpenProfile, isJukeboxActive }) => {
+window.WorkspaceView = ({ workspace, initialCardId, onOpenMyTasks, onBack, user, onLogout, onThemeChange, theme, onUpdateUser, onOpenProfile, isJukeboxActive }) => {
     const { showConfirm, showPrompt, showAlert } = window.useModals();
     const { showToast } = window.useToasts();
     const [columns, setColumns] = React.useState(workspace.columns && workspace.columns.length > 0 ? workspace.columns : [{ id: 'todo', title: 'To Do', order: 0 }]);
@@ -223,6 +223,7 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
         return workspace.members.map(m => typeof m === 'string' ? m : m?.userId).filter(Boolean);
     });
     const [loading, setLoading] = React.useState(true);
+    const autoOpenedRef = React.useRef(false);
     const [expiredCards, setExpiredCards] = React.useState([]);
     const [showExpiredModal, setShowExpiredModal] = React.useState(false);
     const [selectedMoveCol, setSelectedMoveCol] = React.useState('');
@@ -359,6 +360,15 @@ window.WorkspaceView = ({ workspace, onBack, user, onLogout, onThemeChange, them
             const validData = Array.isArray(data) ? data.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)) : [];
             setCards(validData);
             setLoading(false);
+
+            // Deep-link: auto-open a specific card (e.g. navigated from the My Tasks dashboard)
+            if (initialCardId && !autoOpenedRef.current) {
+                const target = validData.find(c => c && (c.id === initialCardId || c._id === initialCardId));
+                if (target) {
+                    autoOpenedRef.current = true;
+                    setEditingCard(target);
+                }
+            }
             
             // Check for expired cards
             const now = new Date();
@@ -994,6 +1004,11 @@ User Request: ${aiInput}` : aiInput;
                     <button onClick={() => setTab('docs')} className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition ${tab === 'docs' ? 'bg-white shadow-lg text-black' : isDarkHeader ? 'text-white opacity-40 hover:opacity-100' : 'opacity-40 hover:opacity-100'}`}>{t('tabs.docs')}</button>
                 </div>
                 <div className="flex items-center gap-6 relative">
+                    {onOpenMyTasks && (
+                        <button onClick={onOpenMyTasks} title={t('labels.my_tasks') || 'My Tasks'} className={`p-2.5 rounded-xl transition cursor-pointer ${isDarkHeader ? "bg-white/10 hover:bg-white/20 text-white" : "bg-black/5 hover:bg-black/10 text-black"}`}>
+                            <window.Icon name="list-checks" size={18} />
+                        </button>
+                    )}
                     <div ref={memberDropdownRef} className={`p-2.5 rounded-xl transition cursor-pointer relative ${isDarkHeader ? "bg-white/10 hover:bg-white/20" : "bg-black/5 hover:bg-black/10"}`} 
                          onClick={() => { setShowNotificationDropdown(false); setShowMemberDropdown(!showMemberDropdown); }}>
                         <window.Icon name="users" size={18} className={isDarkHeader ? "text-white" : "text-black"} />
@@ -1179,9 +1194,9 @@ User Request: ${aiInput}` : aiInput;
                                     return { id: c.id || c._id, orderIndex: i, columnId: c.columnId };
                                 });
                                 
-                                setCards(newCards);
                                 const moveRes = await fetch(`/api/tasks/${draggableId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ columnId: destination.droppableId, auditEvent: { user: user?.email || 'System', action: 'Moved card to ' + destination.droppableId } }) });
                                 const movedTask = await moveRes.json().catch(() => null);
+                                setCards(newCards => newCards.map(c => c.id === movedTask.id ? { ...(movedTask || c), id: c.id || movedTask?.id || movedTask?._id } : c));
                                 if (moveRes.ok) emitCardMoveNotification(draggedCard, destination.droppableId, movedTask || {});
                                 
                                 const movedCard = cards.find(c => c.id === draggableId || c._id === draggableId);

@@ -217,7 +217,7 @@ window.CardModal = ({ card, user, members, allUsers, onClose, onSave, onDelete, 
 
     const handleSave = () => onSave(buildSavePayload());
 
-    const handleClose = () => hasLocalChanges() ? handleSave() : onClose();
+    const handleClose = () => hasLocalChanges() ? showConfirm(t('actions.discard_changes') || "Discard Changes?", t('alerts.confirm_discard_changes') || "You have unsaved changes. Are you sure you want to discard them?", onClose) : onClose();
 
     const copyCardLink = async () => {
         const link = cardUrl || window.location.href;

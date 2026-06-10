@@ -6,6 +6,7 @@
     "vault": "Bilik Kebal"
   },
   "actions": {
+    "discard_changes": "Buang Perubahan?",
     "login": "Log Masuk",
     "signup": "Daftar",
     "logout": "Log Keluar",
@@ -196,6 +197,7 @@
     "import_postman_tooltip": "Import Koleksi Postman"
   },
   "alerts": {
+    "confirm_discard_changes": "Anda mempunyai perubahan yang belum disimpan. Adakah anda pasti mahu membuangnya?",
     "welcome_back": "Selamat kembali, {name}! 🚀",
     "credentials_mismatch": "Tidak sah: Bukti kelayakan tidak sepadan.",
     "access_denied": "Akses Dinafikan",

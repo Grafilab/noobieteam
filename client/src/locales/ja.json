@@ -6,6 +6,7 @@
     "vault": "保管庫"
   },
   "actions": {
+    "discard_changes": "変更を破棄しますか？",
     "login": "ログイン",
     "signup": "サインアップ",
     "logout": "ログアウト",
@@ -196,6 +197,7 @@
     "import_postman_tooltip": "Postmanコレクションをインポート"
   },
   "alerts": {
+    "confirm_discard_changes": "保存されていない変更があります。本当に破棄しますか？",
     "welcome_back": "お帰りなさい、{name}さん！🚀",
     "credentials_mismatch": "未承認：認証情報が一致しません。",
     "access_denied": "アクセス拒否",
