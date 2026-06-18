@@ -388,6 +388,66 @@ window.DocTab = ({ workspaceId, user, onLogActivity }) => {
         await fetch(`/api/docs/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(upd) });
     };
 
+    // Builds a shareable public URL for a document. Public docs are scoped to the
+    // root folder, so the doc is reached via a ?doc= deep link on that folder page.
+    const buildDocPublicUrl = (doc) => {
+        if (!doc) return null;
+        const root = getRootFolder(doc.folderId);
+        if (!root) return null;
+        const seg = root.slug || root.id || root._id;
+        return `${window.location.origin}/docs/${workspaceId}/${seg}?doc=${doc.id || doc._id}`;
+    };
+
+    const copyDocLink = async (doc) => {
+        const link = buildDocPublicUrl(doc);
+        if (!link) {
+            showToast(t('alerts.move_to_folder_to_share') || 'Move this document into a folder to share it publicly.');
+            return;
+        }
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(link);
+            } else {
+                const input = document.createElement('textarea');
+                input.value = link; input.setAttribute('readonly', '');
+                input.style.position = 'fixed'; input.style.opacity = '0';
+                document.body.appendChild(input); input.select();
+                document.execCommand('copy'); document.body.removeChild(input);
+            }
+            showToast(t('alerts.copied_to_clipboard') || 'Copied to clipboard!');
+        } catch (e) {
+            console.error(e);
+            showToast(t('alerts.copy_failed') || 'Unable to copy link.');
+        }
+    };
+
+    const toggleDocPassword = (doc) => {
+        const id = doc.id || doc._id;
+        if (doc.passwordProtected) {
+            showConfirm(
+                t('actions.remove_password') || 'Remove Password',
+                t('alerts.remove_password_confirm') || 'Remove password protection? Anyone with the link will be able to view this document.',
+                async () => {
+                    setDocs(prev => prev.map(d => (d.id === id || d._id === id) ? { ...d, passwordProtected: false } : d));
+                    await fetch(`/api/docs/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: '' }) });
+                    showToast(t('alerts.password_removed') || 'Password protection removed.');
+                }
+            );
+        } else {
+            showPrompt(
+                t('actions.protect_document') || 'Protect Document',
+                t('alerts.set_password_prompt') || 'Set a password viewers must enter to read this document:',
+                async (pw) => {
+                    if (!pw) return;
+                    setDocs(prev => prev.map(d => (d.id === id || d._id === id) ? { ...d, passwordProtected: true } : d));
+                    await fetch(`/api/docs/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: pw }) });
+                    showToast(t('alerts.password_set') || 'Document password set.');
+                },
+                true
+            );
+        }
+    };
+
     const toggleDocSelection = (id, e) => {
         e.stopPropagation();
         const next = new Set(selectedDocIds);
@@ -520,8 +580,10 @@ window.DocTab = ({ workspaceId, user, onLogActivity }) => {
                                                         </div>
                                                                         <window.Icon name={doc.type === 'API' ? "zap" : "file-text"} size={14} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                                                         <span className="text-[11px] font-bold truncate">{doc.title || t('labels.untitled')}</span>
+                                                                        {doc.passwordProtected && <window.Icon name="lock" size={10} className="text-gray-400 flex-shrink-0" />}
                                                                     </div>
                                                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                                        <button onClick={(e) => { e.stopPropagation(); copyDocLink(doc); }} className="p-1 text-gray-400 hover:text-blue-500" title={t('actions.copy_link') || 'Copy Public Link'}><window.Icon name="link" size={12} /></button>
                                                                         <button onClick={(e) => { e.stopPropagation(); moveToFolder(docId, null); }} className="p-1 text-gray-400 hover:text-gray-600" title={t('actions.move_selected')}><window.Icon name="log-out" size={12} /></button>
                                                                         <button onClick={(e) => { e.stopPropagation(); deleteDoc(docId); }} className="p-1 text-gray-400 hover:text-red-500" title={t('actions.destroy_document')}><window.Icon name="trash" size={12} /></button>
                                                                     </div>
@@ -543,8 +605,10 @@ window.DocTab = ({ workspaceId, user, onLogActivity }) => {
                                                         </div>
                                                         <window.Icon name={doc.type === 'API' ? "zap" : "file-text"} size={14} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                                         <span className="text-xs font-bold truncate">{doc.title || t('labels.untitled')}</span>
+                                                        {doc.passwordProtected && <window.Icon name="lock" size={10} className="text-gray-400 flex-shrink-0" />}
                                                     </div>
                                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                                                        <button onClick={(e) => { e.stopPropagation(); copyDocLink(doc); }} className="p-1 text-gray-400 hover:text-blue-500" title={t('actions.copy_link') || 'Copy Public Link'}><window.Icon name="link" size={12} /></button>
                                                         <button onClick={(e) => { e.stopPropagation(); moveToFolder(docId, null); }} className="p-1 text-gray-400 hover:text-gray-600" title="Move to Root"><window.Icon name="log-out" size={12} /></button>
                                                         <button onClick={(e) => { e.stopPropagation(); deleteDoc(docId); }} className="p-1 text-gray-400 hover:text-red-500" title="Delete Document"><window.Icon name="trash" size={12} /></button>
                                                     </div>
@@ -575,6 +639,7 @@ window.DocTab = ({ workspaceId, user, onLogActivity }) => {
                                     <window.Icon name="file-text" size={16} className={selectedDocId === docId ? 'text-blue-500' : 'text-gray-400'} />
                                 )}
                                 <span className={`text-xs font-bold truncate max-w-[140px] ${selectedDocId === docId ? 'text-blue-700' : 'text-gray-700'}`}>{doc.title}</span>
+                                {doc.passwordProtected && <window.Icon name="lock" size={11} className="text-gray-400 flex-shrink-0" />}
                             </div>
                             <button onClick={(e) => { e.stopPropagation(); deleteDoc(docId); }} className="text-gray-300 hover:text-red-500 transition"><window.Icon name="trash-2" size={14}/></button>
                         </div>
@@ -626,7 +691,21 @@ window.DocTab = ({ workspaceId, user, onLogActivity }) => {
                                 onChange={e => updateDoc(activeDoc.id || activeDoc._id, { title: e.target.value })}
                             />
                             
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => toggleDocPassword(activeDoc)}
+                                    className={`p-2 rounded-lg transition ${activeDoc.passwordProtected ? 'text-blue-500 bg-blue-50 hover:bg-blue-100' : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'}`}
+                                    title={activeDoc.passwordProtected ? (t('actions.remove_password') || 'Remove Password') : (t('actions.protect_document') || 'Protect Document')}
+                                >
+                                    <window.Icon name={activeDoc.passwordProtected ? "lock" : "lock-open"} size={16} />
+                                </button>
+                                <button
+                                    onClick={() => copyDocLink(activeDoc)}
+                                    className="p-2 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition"
+                                    title={t('actions.copy_link') || 'Copy Public Link'}
+                                >
+                                    <window.Icon name="link" size={16} />
+                                </button>
                                 <select 
                                     className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 font-bold text-gray-600 outline-none"
                                     value={activeDoc.folderId || ''}

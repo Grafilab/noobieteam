@@ -135,9 +135,14 @@ const docSchema = new mongoose.Schema({
     body: String,
     examples: [{ name: String, requestBody: String, responseBody: String, status: Number }]
   },
+  passwordProtected: { type: Boolean, default: false },
+  passwordHash: { type: String, select: false }, // SHA-256 of share password; never exposed to clients
   createdBy: String
 }, { timestamps: true });
-docSchema.set('toJSON', { virtuals: true });
+docSchema.set('toJSON', {
+  virtuals: true,
+  transform: (_doc, ret) => { delete ret.passwordHash; return ret; }
+});
 const Doc = mongoose.model('Doc', docSchema);
 
 const folderSchema = new mongoose.Schema({

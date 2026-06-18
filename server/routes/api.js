@@ -468,7 +468,18 @@ router.put('/docs/bulk-move', async (req, res) => {
 
 router.put('/docs/:id', async (req, res) => {
   try {
-    const doc = await Doc.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Extract the share `password` so it is never persisted in plaintext.
+    const { password, passwordHash, ...update } = req.body;
+    if (password !== undefined) {
+      if (password === null || password === '') {
+        update.passwordProtected = false;
+        update.passwordHash = null;
+      } else {
+        update.passwordHash = crypto.createHash('sha256').update(String(password)).digest('hex');
+        update.passwordProtected = true;
+      }
+    }
+    const doc = await Doc.findByIdAndUpdate(req.params.id, update, { new: true });
     res.json(doc);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -571,12 +582,65 @@ router.get('/public/docs/:wsId/:folderSlug', async (req, res) => {
     // Fetch docs in root folder AND subfolders
     const docs = await Doc.find({ workspaceId: workspace._id.toString(), folderId: { $in: [folder._id.toString(), ...subfolderIds] } }).sort({ order: 1, createdAt: 1 });
     
+    // Mask the content of password-protected docs. Viewers must unlock them
+    // individually via the /unlock endpoint before content is revealed.
+    const safeDocs = docs.map(d => {
+        const obj = d.toJSON();
+        if (obj.passwordProtected) {
+            return {
+                id: obj.id,
+                _id: obj._id,
+                title: obj.title,
+                type: obj.type,
+                folderId: obj.folderId,
+                passwordProtected: true,
+                content: '',
+                apiSpec: obj.type === 'API' ? { method: obj.apiSpec?.method } : undefined
+            };
+        }
+        return obj;
+    });
+    
     res.json({ 
         workspace: { id: workspace._id, name: workspace.name }, 
         folder: { id: folder._id, name: folder.name, slug: folder.slug, description: folder.description, environments: folder.environments }, 
         subfolders: subfolders.map(f => ({ id: f._id, name: f.name, parentId: f.parentId, description: f.description, environments: f.environments })),
-        docs 
+        docs: safeDocs 
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Unlock a single password-protected public document by supplying its password.
+// Returns the full content/apiSpec only when the password matches.
+router.post('/public/docs/:wsId/unlock', async (req, res) => {
+  try {
+    const mongoose = require('mongoose');
+    const { docId, password } = req.body;
+    if (!docId) return res.status(400).json({ error: 'docId is required' });
+
+    let wsQuery = [{ name: req.params.wsId }];
+    if (mongoose.Types.ObjectId.isValid(req.params.wsId) && String(req.params.wsId).length === 24) {
+        wsQuery.push({ _id: req.params.wsId });
+    }
+    const workspace = await Workspace.findOne({ $or: wsQuery });
+    if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+
+    if (!mongoose.Types.ObjectId.isValid(docId)) return res.status(404).json({ error: 'Document not found' });
+    const doc = await Doc.findOne({ _id: docId, workspaceId: workspace._id.toString() }).select('+passwordHash');
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+    if (!doc.passwordProtected) {
+        return res.json({ id: doc._id, title: doc.title, type: doc.type, content: doc.content, apiSpec: doc.apiSpec });
+    }
+
+    const hash = crypto.createHash('sha256').update(String(password || '')).digest('hex');
+    if (hash !== doc.passwordHash) {
+        return res.status(401).json({ error: 'Incorrect password' });
+    }
+
+    res.json({ id: doc._id, title: doc.title, type: doc.type, content: doc.content, apiSpec: doc.apiSpec });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
